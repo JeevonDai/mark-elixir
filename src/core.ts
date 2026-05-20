@@ -11,6 +11,7 @@ import { MindElixirPanel } from './panel';
 import type { Heading, List, Paragraph, RootContent, Yaml } from 'mdast';
 import type { Root } from 'hast';
 import { NodeObj } from 'mind-elixir';
+import { plaintextToMindElixir, mindElixirToPlaintext } from 'mind-elixir/plaintextConverter';
 import type { Plugin } from 'unified';
 import { visit } from 'unist-util-visit';
 
@@ -147,6 +148,25 @@ const treeToMindElixir = async (med: TreeItem & NodeObj) => {
   }
 };
 
+/**
+ * Get mind-elixir locale from VS Code language setting.
+ * Maps VS Code language IDs to mind-elixir locale strings.
+ */
+function getMindElixirLocale(): string {
+  const lang = vscode.env.language; // e.g. 'zh-cn', 'en', 'ja'
+  if (lang.startsWith('zh-tw') || lang.startsWith('zh-hant')) return 'zh_TW';
+  if (lang.startsWith('zh')) return 'zh_CN';
+  if (lang.startsWith('ja')) return 'ja';
+  if (lang.startsWith('pt')) return 'pt';
+  if (lang.startsWith('ru')) return 'ru';
+  if (lang.startsWith('de')) return 'de';
+  if (lang.startsWith('fr')) return 'fr';
+  if (lang.startsWith('es')) return 'es';
+  if (lang.startsWith('it')) return 'it';
+  if (lang.startsWith('ko')) return 'ko';
+  return 'en';
+}
+
 export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
   return async () => {
     const editor = vscode.window.activeTextEditor;
@@ -157,51 +177,89 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
     }
     const document = editor.document;
     const documentContent = document.getText();
-    const ast = unified()
-      .use(remarkParse)
-      .use(remarkFrontmatter)
-      .use(remarkGfm)
-      .parse(documentContent);
+    const locale = getMindElixirLocale();
 
-    const frontmatter = ast.children.find((child) => child.type === 'yaml');
-    let title = path.basename(document.fileName);
+    // Detect Mind Elixir Plaintext format (starts with "- ")
+    const isPlaintext = documentContent.trimStart().startsWith('- ');
 
-    // Get configuration value
-    const config = vscode.workspace.getConfiguration('mindElixirMarkdown');
-    const useH1AsRoot = config.get('h1AsRoot');
+    let data: NodeObj;
+    let title = path.basename(document.fileName, path.extname(document.fileName));
 
-    if (frontmatter) {
-      const obj = parseFrontmatter((frontmatter as Yaml).value);
-      if (obj.title) {
-        title = obj.title;
+    if (isPlaintext) {
+      // Use plaintextToMindElixir converter for Plaintext format
+      const mindElixirData = plaintextToMindElixir(documentContent, title);
+      data = mindElixirData.nodeData;
+    } else {
+      // Parse as Markdown
+      const ast = unified()
+        .use(remarkParse)
+        .use(remarkFrontmatter)
+        .use(remarkGfm)
+        .parse(documentContent);
+
+      const frontmatter = ast.children.find((child) => child.type === 'yaml');
+
+      // Get configuration value
+      const config = vscode.workspace.getConfiguration('mindElixirMarkdown');
+      const useH1AsRoot = config.get('h1AsRoot');
+
+      if (frontmatter) {
+        const obj = parseFrontmatter((frontmatter as Yaml).value);
+        if (obj.title) {
+          title = obj.title;
+        }
+      }
+      const tree = markdownAstToTree(
+        ast.children.filter(
+          (child) => child.type !== 'yaml' && child.type !== 'html'
+        )
+      );
+      await treeToMindElixir(tree as any);
+
+      if (useH1AsRoot && tree.children.length === 1) {
+        const h1 = tree.children[0] as any as NodeObj;
+        data = h1;
+      } else {
+        data = {
+          topic: title,
+          id: 'root',
+          children: tree.children as any,
+        };
       }
     }
-    const tree = markdownAstToTree(
-      ast.children.filter(
-        (child) => child.type !== 'yaml' && child.type !== 'html'
-      )
-    );
-    await treeToMindElixir(tree as any);
 
     const mindElixirPanel = new MindElixirPanel(
       context.extensionUri,
-      title + ' - Mark Elixir'
+      title + ' - Mark Elixir',
+      isPlaintext,
+      locale,
     );
 
-    let data = undefined;
-    if (useH1AsRoot && tree.children.length === 1) {
-      const h1 = tree.children[0] as any as NodeObj;
-      data = h1;
-    } else {
-      data = {
-        topic: title,
-        id: 'root',
-        children: tree.children as any,
-      };
-    }
     await mindElixirPanel.init(data);
-    // mindElixirPanel.download();
-    mindElixirPanel.panel.webview.onDidReceiveMessage((message: any) => {});
+
+    // Handle messages from webview
+    mindElixirPanel.panel.webview.onDidReceiveMessage(async (message: any) => {
+      switch (message.command) {
+        case 'save': {
+          // Plaintext bidirectional editing: write mind map data back to file
+          if (!isPlaintext) return;
+          try {
+            const plaintext = mindElixirToPlaintext(message.data);
+            const encoder = new TextEncoder();
+            await vscode.workspace.fs.writeFile(
+              document.uri,
+              encoder.encode(plaintext)
+            );
+          } catch (e) {
+            vscode.window.showErrorMessage(`Mark Elixir: failed to save file: ${e}`);
+          }
+          return;
+        }
+        default:
+          break;
+      }
+    });
+
     context.subscriptions.push(mindElixirPanel.panel);
   };
 };

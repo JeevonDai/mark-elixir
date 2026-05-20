@@ -63,6 +63,7 @@
     "publish-ext": "pnpm vsce publish --no-dependencies --allow-star-activation"
   },
   "devDependencies": {
+    "@types/katex": "^0.16.8",
     "@types/mocha": "^10.0.6",
     "@types/node": "~18.19.34",
     "@types/vscode": "^1.90.0",
@@ -76,10 +77,12 @@
     "typescript": "^5.4.5"
   },
   "dependencies": {
+    "@mind-elixir/export-mindmap": "0.1.4-beta.6",
     "@types/hast": "^3.0.4",
     "@types/mdast": "^4.0.4",
     "@vscode/vsce": "^2.27.0",
-    "mind-elixir": "^4.3.6",
+    "katex": "^0.16.45",
+    "mind-elixir": "5.11.1-beta.4",
     "rehype-highlight": "^7.0.0",
     "rehype-img-size": "^1.0.1",
     "rehype-stringify": "^10.0.0",

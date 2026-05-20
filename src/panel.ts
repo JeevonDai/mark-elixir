@@ -5,7 +5,12 @@ import { NodeObj } from 'mind-elixir';
 export class MindElixirPanel {
   panel: vscode.WebviewPanel;
   html?: string;
-  constructor(private readonly _extensionUri: vscode.Uri, name: string) {
+  constructor(
+    private readonly _extensionUri: vscode.Uri,
+    name: string,
+    private readonly isPlaintext: boolean = false,
+    private readonly locale: string = 'en',
+  ) {
     const panel = vscode.window.createWebviewPanel(
       'mindElixir',
       name,
@@ -55,7 +60,11 @@ export class MindElixirPanel {
         <body>
             <div id="map"></div>
             <script>
-              window.injectedData = ${JSON.stringify({ nodeData })};
+              window.injectedData = ${JSON.stringify({
+                nodeData,
+                isPlaintext: this.isPlaintext,
+                locale: this.locale,
+              })};
               ${js}
             </script>
         </body>
