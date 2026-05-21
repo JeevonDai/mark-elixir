@@ -1,3 +1,4 @@
+import 'mind-elixir/style.css';
 import MindElixir from 'mind-elixir';
 import type {
   MindElixirData,

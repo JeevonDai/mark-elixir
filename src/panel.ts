@@ -42,6 +42,9 @@ export class MindElixirPanel {
     const js = await getFileContentAsString(
       vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.js')
     );
+    const webviewCss = await getFileContentAsString(
+      vscode.Uri.joinPath(this._extensionUri, 'dist', 'webview.css')
+    );
     const index = await getFileContentAsString(
       vscode.Uri.joinPath(this._extensionUri, 'public', 'index.css')
     );
@@ -54,6 +57,7 @@ export class MindElixirPanel {
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Mark Elixir</title>
+            <style>${webviewCss}</style>
             <style>${hljs}</style>
             <style>${index}</style>
         </head>
