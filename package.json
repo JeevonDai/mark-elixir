@@ -17,6 +17,13 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "markdown.markdownItPlugins": true,
+    "markdown.previewScripts": [
+      "./dist/preview.js"
+    ],
+    "markdown.previewStyles": [
+      "./dist/preview.css"
+    ],
     "commands": [
       {
         "command": "mind-elixir.markdown",

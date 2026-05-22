@@ -55,14 +55,30 @@ async function main() {
 		outfile: 'dist/webview.js',
 		logLevel: 'silent',
 	});
+	const preview = await esbuild.context({
+		entryPoints: [
+			'src/webview/preview.ts',
+			'src/webview/preview.css'
+		],
+		bundle: true,
+		minify: production,
+		sourcemap: !production,
+		sourcesContent: false,
+		platform: 'browser',
+		outdir: 'dist',
+		logLevel: 'silent',
+	});
 	if (watch) {
 		await ctx.watch();
 		await web.watch();
+		await preview.watch();
 	} else {
 		await ctx.rebuild();
 		await ctx.dispose();
 		await web.rebuild();
 		await web.dispose();
+		await preview.rebuild();
+		await preview.dispose();
 	}
 }
 
