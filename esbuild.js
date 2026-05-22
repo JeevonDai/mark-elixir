@@ -49,11 +49,16 @@ async function main() {
 		bundle: true,
 		format: 'esm',
 		minify: production,
-		sourcemap: !production,
+		sourcemap: false,
 		sourcesContent: false,
 		platform: 'node',
 		outfile: 'dist/webview.js',
 		logLevel: 'silent',
+		loader: {
+			'.woff2': 'file',
+			'.woff': 'file',
+			'.ttf': 'file'
+		}
 	});
 	const preview = await esbuild.context({
 		entryPoints: [
@@ -62,11 +67,16 @@ async function main() {
 		],
 		bundle: true,
 		minify: production,
-		sourcemap: !production,
+		sourcemap: false,
 		sourcesContent: false,
 		platform: 'browser',
 		outdir: 'dist',
 		logLevel: 'silent',
+		loader: {
+			'.woff2': 'file',
+			'.woff': 'file',
+			'.ttf': 'file'
+		}
 	});
 	if (watch) {
 		await ctx.watch();

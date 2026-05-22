@@ -1,4 +1,5 @@
 @import "mind-elixir/style.css";
+@import "katex/dist/katex.min.css";
 
 /* Mind Elixir Code Block Container */
 .mindelixir-codeblock-container {

@@ -1,4 +1,6 @@
 import 'mind-elixir/style.css';
+import 'katex/dist/katex.min.css';
+
 import MindElixir from 'mind-elixir';
 import type {
   MindElixirData,
@@ -9,6 +11,8 @@ import type {
 import * as mindElixirI18n from 'mind-elixir/i18n';
 import { downloadImage } from '@mind-elixir/export-mindmap';
 import katex from 'katex';
+import 'katex/contrib/mhchem';
+
 
 interface InjectedData {
   nodeData: NodeObj;

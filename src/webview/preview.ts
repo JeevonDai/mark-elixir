@@ -3,6 +3,7 @@ import type { Options } from 'mind-elixir';
 import { plaintextToMindElixir } from 'mind-elixir/plaintextConverter';
 import { downloadImage } from '@mind-elixir/export-mindmap';
 import katex from 'katex';
+import 'katex/contrib/mhchem';
 
 // ─── KaTeX Math Rendering ────────────────────────────────────────────────────
 function renderMath(text: string): string {
