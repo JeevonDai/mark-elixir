@@ -12,3 +12,9 @@ vsc-extension-quickstart.md
 **/*.map
 **/*.ts
 **/.vscode-test.*
+.vsce-token
+.ovsx-token
+.env
+pnpm-lock.yaml
+*.vsix
+
