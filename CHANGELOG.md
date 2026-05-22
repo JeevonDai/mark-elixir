@@ -6,6 +6,11 @@ Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how 
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-05-22
+- Implement markdown-it plugin to render MindElixir mindmaps directly inside VSCode standard markdown previews (e.g. using `mindmap` code blocks).
+- Integrate KaTeX `mhchem` extension for high-quality chemical formula rendering.
+- Bundle required stylesheet and font assets in esbuild configuration for seamless offline math/chemistry formula rendering.
+
 ## [1.0.1] - 2026-05-22
 - Fix secret leak issue by updating `.vscodeignore` to exclude private token files.
 
