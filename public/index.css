@@ -24,9 +24,6 @@ me-main > me-wrapper {
   object-fit: contain;
 }
 
-.map-container me-tpc > * {
-  pointer-events: all !important;
-}
 
 .map-canvas h1,
 .map-canvas h2,
