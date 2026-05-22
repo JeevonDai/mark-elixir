@@ -1,48 +1,93 @@
-# Welcome to your VS Code Extension
+# VS Code Extension Quickstart & Release Guide
 
-## What's in the folder
+Welcome to the **Markdown MindMap (`mark-elixir`)** extension developer guide. This document outlines the setup, local development, testing, and the production release/publishing workflow.
 
-* This folder contains all of the files necessary for your extension.
-* `package.json` - this is the manifest file in which you declare your extension and command.
-  * The sample plugin registers a command and defines its title and command name. With this information VS Code can show the command in the command palette. It doesn’t yet need to load the plugin.
-* `src/extension.ts` - this is the main file where you will provide the implementation of your command.
-  * The file exports one function, `activate`, which is called the very first time your extension is activated (in this case by executing the command). Inside the `activate` function we call `registerCommand`.
-  * We pass the function containing the implementation of the command as the second parameter to `registerCommand`.
+---
 
-## Setup
+## 🛠 Setup & Local Development
 
-* install the recommended extensions (amodio.tsl-problem-matcher, ms-vscode.extension-test-runner, and dbaeumer.vscode-eslint)
+1. **Install Dependencies**:
+   ```bash
+   pnpm install
+   ```
 
+2. **Run in Development Mode**:
+   - Press `F5` in VS Code to open a new **Extension Development Host** window with the extension loaded.
+   - Edit the source code in `src/`.
+   - The watch scripts (`pnpm run watch:tsc` and `pnpm run watch:esbuild`) will automatically recompile your TypeScript changes in real-time.
+   - Reload the Extension Development Host window (`Cmd+R` on Mac or `Ctrl+R` on Windows) to see changes.
 
-## Get up and running straight away
+3. **Run Tests**:
+   - Install the [Extension Test Runner](https://marketplace.visualstudio.com/items?itemName=ms-vscode.extension-test-runner).
+   - Run tests through the Testing view in the sidebar or via the debug panel.
 
-* Press `F5` to open a new window with your extension loaded.
-* Run your command from the command palette by pressing (`Ctrl+Shift+P` or `Cmd+Shift+P` on Mac) and typing `Hello World`.
-* Set breakpoints in your code inside `src/extension.ts` to debug your extension.
-* Find output from your extension in the debug console.
+---
 
-## Make changes
+## 🚨 Security Pre-requisite
 
-* You can relaunch the extension from the debug toolbar after changing code in `src/extension.ts`.
-* You can also reload (`Ctrl+R` or `Cmd+R` on Mac) the VS Code window with your extension to load your changes.
+To prevent Personal Access Tokens (PATs) from being leaked, always ensure the token files are excluded from Git and the packaged extension:
+- `.gitignore` and `.vscodeignore` are pre-configured to exclude `.vsce-token`, `.ovsx-token`, and `.env`.
+- Store your publishing tokens in the root directory in local, untracked files named `.vsce-token` (for VS Code Marketplace) and `.ovsx-token` (for Open VSX).
 
+---
 
-## Explore the API
+## 🚀 Version Release & Publish Workflow
 
-* You can open the full set of our API when you open the file `node_modules/@types/vscode/index.d.ts`.
+Follow these exact steps to release a new version of the extension:
 
-## Run tests
+### Step 1: Bump Version & Update Changelog
+1. In [`package.json`](file:///Users/darksouls/projects/mindmap-plugin/mark-elixir/package.json), update the `"version"` field (e.g., `"1.1.0"`).
+2. In [`CHANGELOG.md`](file:///Users/darksouls/projects/mindmap-plugin/mark-elixir/CHANGELOG.md), add a new section for the release with the date and key changes:
+   ```markdown
+   ## [1.1.0] - 2026-05-22
+   - Key feature details here...
+   ```
 
-* Install the [Extension Test Runner](https://marketplace.visualstudio.com/items?itemName=ms-vscode.extension-test-runner)
-* Run the "watch" task via the **Tasks: Run Task** command. Make sure this is running, or tests might not be discovered.
-* Open the Testing view from the activity bar and click the Run Test" button, or use the hotkey `Ctrl/Cmd + ; A`
-* See the output of the test result in the Test Results view.
-* Make changes to `src/test/extension.test.ts` or create new test files inside the `test` folder.
-  * The provided test runner will only consider files matching the name pattern `**.test.ts`.
-  * You can create folders inside the `test` folder to structure your tests any way you want.
+### Step 2: Build and Package
+Compile and bundle the extension locally to verify there are no TypeScript, Linting, or Esbuild errors, and to generate the `.vsix` file:
+```bash
+pnpm run build
+```
+*This command runs type checking, linting, production bundling, and generates a local `mark-elixir-<version>.vsix` package.*
 
-## Go further
+### Step 3: Publish to VS Code Marketplace
+Publish the extension using your saved VSCE token:
+```bash
+export VSCE_PAT=$(cat .vsce-token)
+pnpm run publish-ext
+```
 
-* Reduce the extension size and improve the startup time by [bundling your extension](https://code.visualstudio.com/api/working-with-extensions/bundling-extension).
-* [Publish your extension](https://code.visualstudio.com/api/working-with-extensions/publishing-extension) on the VS Code extension marketplace.
-* Automate builds by setting up [Continuous Integration](https://code.visualstudio.com/api/working-with-extensions/continuous-integration).
+### Step 4: Publish to Open VSX Registry
+Publish the packaged `.vsix` file to the Open VSX Registry using `ovsx`. 
+> [!TIP]
+> **Use `pnpm dlx` instead of `npx`** to run `ovsx`. This avoids potential cache directory permission issues (`EACCES` errors) on the local machine:
+
+```bash
+# Get the version from package.json
+VERSION=$(node -p "require('./package.json').version")
+
+# Publish using ovsx via pnpm dlx
+pnpm dlx ovsx publish mark-elixir-$VERSION.vsix -p $(cat .ovsx-token)
+```
+
+### Step 5: Git Commit, Tag, and Push
+Keep your version history clean and aligned with the marketplace:
+```bash
+# Stage and commit version changes
+git add package.json CHANGELOG.md
+git commit -m "chore: bump version to $VERSION"
+
+# Create a git tag for the release
+git tag v$VERSION
+
+# Push master and tags to remote
+git push origin master --tags
+```
+
+---
+
+## 🔗 Useful Links
+- **VS Code Marketplace**: [MindElixir.mark-elixir](https://marketplace.visualstudio.com/items?itemName=MindElixir.mark-elixir)
+- **Publisher Dashboard (VS Code)**: [Marketplace Publisher Hub](https://marketplace.visualstudio.com/manage/publishers/MindElixir/extensions/mark-elixir/hub)
+- **Open VSX Registry**: [Open VSX Home](https://open-vsx.org/)
+- **Publisher Namespace (Open VSX)**: [Open VSX Publisher Hub](https://open-vsx.org/manage)
