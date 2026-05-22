@@ -18,8 +18,21 @@ import { visit } from 'unist-util-visit';
 interface TreeItem {
   children: TreeItem[];
   object: any;
-  parent: any;
-  type: any;
+  parent: TreeItem | null;
+  type: string;
+}
+
+function generateId(): string {
+  return Math.random().toString(36).substring(2, 11);
+}
+
+function extractText(node: any): string {
+  if (!node) return '';
+  if (typeof node.value === 'string') return node.value;
+  if (node.children) {
+    return node.children.map(extractText).join('');
+  }
+  return '';
 }
 
 const parseFrontmatter = (frontmatter: string) => {
@@ -29,36 +42,46 @@ const parseFrontmatter = (frontmatter: string) => {
   return Object.fromEntries(data);
 };
 
-const markdownAstToTree = (children: RootContent[]) => {
+const markdownAstToTree = (ast: any): TreeItem => {
+  const children = ast.children || ast;
   const treeItem: TreeItem = {
     type: 'root',
     children: [],
-    object: { depth: 0 },
+    object: ast,
     parent: null,
   };
+
   let current = treeItem;
   for (let i = 0; i < children.length; i++) {
     const child = children[i];
+    if (!child) continue;
+    if (child.type === 'yaml' || child.type === 'thematicBreak') {
+      continue;
+    }
     if (child.type === 'heading') {
       const heading = child as Heading;
-      const data = {
+      const data: TreeItem = {
         type: heading.type,
         object: heading,
         parent: current,
         children: [],
       };
-      if (heading.depth > current.object.depth) {
+
+      if (heading.depth > (current.object.depth || 0)) {
         current.children.push(data);
         current = data;
       } else {
-        while (heading.depth <= current.object.depth) {
+        while (
+          heading.depth <= (current.object.depth || 0) &&
+          current.parent
+        ) {
           current = current.parent;
         }
         current.children.push(data);
         current = data;
       }
     } else {
-      const data = {
+      const data: TreeItem = {
         type: child.type,
         object: child,
         parent: current,
@@ -67,35 +90,8 @@ const markdownAstToTree = (children: RootContent[]) => {
       current.children.push(data);
     }
   }
-  return treeItem;
-};
 
-const processList = (list: List): any => {
-  return list.children.map((child) => {
-    const item = child.children[0] as Paragraph;
-    const nest = child.children[1] as List;
-    if (nest) {
-      if (nest.type === 'list') {
-        return {
-          object: item,
-          children: processList(nest),
-        };
-      } else {
-        return {
-          object: item,
-          children: [
-            {
-              object: nest,
-            },
-          ],
-        };
-      }
-    } else {
-      return {
-        object: item,
-      };
-    }
-  });
+  return treeItem;
 };
 
 const addWidthAndHeight: Plugin<[], Root> = () =>
@@ -108,44 +104,85 @@ const addWidthAndHeight: Plugin<[], Root> = () =>
     });
   };
 
-const treeToMindElixir = async (med: TreeItem & NodeObj) => {
-  if (med.type === 'list') {
-    med.topic = 'List';
-    med.children = processList(med.object);
-  } else if (med.type !== 'root') {
-    const htmlAst = await unified()
-      .use(remarkRehype)
-      .use(rehypeHighlight)
-      .use(addWidthAndHeight)
-      .run(med.object);
-    const html = unified().use(rehypeStringify).stringify(htmlAst);
-    med.dangerouslySetInnerHTML = html;
-  }
-  med.id = med.object.position?.start?.offset?.toString() || '';
-  Reflect.deleteProperty(med, 'parent');
-  Reflect.deleteProperty(med, 'type');
-  Reflect.deleteProperty(med, 'object');
+const htmlProcessor = unified()
+  .use(remarkRehype)
+  .use(rehypeHighlight)
+  .use(addWidthAndHeight)
+  .use(rehypeStringify);
 
-  if (!med?.children || med?.children?.length === 0) {
-    return;
-  }
+const processList = (list: List): NodeObj[] => {
+  return list.children.map((listItem) => {
+    const result: NodeObj = {
+      topic: '',
+      id: generateId(),
+      children: [],
+    };
 
-  // If the current node is a list with only one child, spread the child into the current node
-  if (med.children.length === 1 && med.children[0].type === 'list') {
-    med.children = processList(med.children[0].object);
-  }
+    const contentNode = listItem.children[0];
+    const nestedList = listItem.children[1];
 
-  for (let i = 0; i < med.children.length; i++) {
-    let child = med.children[i];
-    const next = med.children[i + 1];
-    // Check if the next node is a list, if so, merge it into the current node
-    if (next?.type === 'list') {
-      child.children = processList(next.object);
-      med.children.splice(i + 1, 1);
+    if (contentNode) {
+      try {
+        const hastNode = htmlProcessor.runSync(contentNode as any);
+        const htmlStr = htmlProcessor.stringify(hastNode);
+        if (typeof htmlStr === 'string') {
+          result.dangerouslySetInnerHTML = htmlStr;
+        }
+      } catch (e) {
+        console.error('HTML conversion error', e);
+      }
     }
 
-    await treeToMindElixir(child);
+    if (nestedList && nestedList.type === 'list') {
+      result.children = processList(nestedList);
+    }
+
+    return result;
+  });
+};
+
+const treeToMindElixir = (items: TreeItem[]): NodeObj[] => {
+  const nodes: NodeObj[] = [];
+  if (items.length === 1 && items[0].type === 'list') {
+    return processList(items[0].object as List);
   }
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i];
+    const node = {} as NodeObj;
+    nodes.push(node);
+    if (item.type === 'list') {
+      node.children = processList(item.object as List);
+      node.topic = 'List';
+      continue;
+    } else {
+      if (item.type === 'html') {
+        node.dangerouslySetInnerHTML = (item.object as any).value;
+      } else {
+        try {
+          const hastNode = htmlProcessor.runSync(item.object as any);
+          const htmlStr = htmlProcessor.stringify(hastNode);
+          if (typeof htmlStr === 'string') {
+            node.dangerouslySetInnerHTML = htmlStr;
+          }
+        } catch (e) {
+          console.error('HTML conversion error', e);
+        }
+      }
+    }
+
+    // Generate ID
+    node.id = item.object.position?.start?.offset?.toString() || generateId();
+
+    // KEY FEATURE: Merge following lists into preceding content
+    const next = items[i + 1];
+    if (next && next.type === 'list') {
+      node.children = processList(next.object as List);
+      items.splice(i + 1, 1);
+    } else {
+      node.children = treeToMindElixir(item.children);
+    }
+  }
+  return nodes;
 };
 
 /**
@@ -209,30 +246,40 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           title = obj.title;
         }
       }
-      const tree = markdownAstToTree(
-        ast.children.filter(
-          (child) => child.type !== 'yaml' && child.type !== 'html'
-        )
-      );
-      await treeToMindElixir(tree as any);
 
-      if (useH1AsRoot && tree.children.length === 1) {
-        const h1 = tree.children[0] as any as NodeObj;
-        data = h1;
+      // Convert ast to hierarchical tree
+      const tree = markdownAstToTree(ast);
+
+      let nodes: NodeObj[];
+      let rootTopic = title;
+
+      if (useH1AsRoot) {
+        const h1Index = tree.children.findIndex(
+          (child) => child.type === 'heading' && (child.object as Heading).depth === 1
+        );
+        if (h1Index !== -1) {
+          const h1 = tree.children[h1Index];
+          rootTopic = extractText(h1.object);
+          nodes = treeToMindElixir(h1.children);
+        } else {
+          nodes = treeToMindElixir(tree.children);
+        }
       } else {
-        data = {
-          topic: title,
-          id: 'root',
-          children: tree.children as any,
-        };
+        nodes = treeToMindElixir(tree.children);
       }
+
+      data = {
+        topic: rootTopic,
+        id: 'root',
+        children: nodes,
+      };
     }
 
     const mindElixirPanel = new MindElixirPanel(
       context.extensionUri,
       title + ' - Mark Elixir',
       isPlaintext,
-      locale,
+      locale
     );
 
     await mindElixirPanel.init(data);
