@@ -219,61 +219,68 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
     // Detect Mind Elixir Plaintext format (starts with "- ")
     const isPlaintext = documentContent.trimStart().startsWith('- ');
 
-    let data: NodeObj;
-    let title = path.basename(document.fileName, path.extname(document.fileName));
+    const getParsedData = (text: string) => {
+      let data: NodeObj;
+      let title = path.basename(document.fileName, path.extname(document.fileName));
 
-    if (isPlaintext) {
-      // Use plaintextToMindElixir converter for Plaintext format
-      const mindElixirData = plaintextToMindElixir(documentContent, title);
-      data = mindElixirData.nodeData;
-    } else {
-      // Parse as Markdown
-      const ast = unified()
-        .use(remarkParse)
-        .use(remarkFrontmatter)
-        .use(remarkGfm)
-        .parse(documentContent);
+      if (isPlaintext) {
+        // Use plaintextToMindElixir converter for Plaintext format
+        const mindElixirData = plaintextToMindElixir(text, title);
+        data = mindElixirData.nodeData;
+      } else {
+        // Parse as Markdown
+        const ast = unified()
+          .use(remarkParse)
+          .use(remarkFrontmatter)
+          .use(remarkGfm)
+          .parse(text);
 
-      const frontmatter = ast.children.find((child) => child.type === 'yaml');
+        const frontmatter = ast.children.find((child) => child.type === 'yaml');
 
-      // Get configuration value
-      const config = vscode.workspace.getConfiguration('mindElixirMarkdown');
-      const useH1AsRoot = config.get('h1AsRoot');
+        // Get configuration value
+        const config = vscode.workspace.getConfiguration('mindElixirMarkdown');
+        const useH1AsRoot = config.get('h1AsRoot');
 
-      if (frontmatter) {
-        const obj = parseFrontmatter((frontmatter as Yaml).value);
-        if (obj.title) {
-          title = obj.title;
+        if (frontmatter) {
+          const obj = parseFrontmatter((frontmatter as Yaml).value);
+          if (obj.title) {
+            title = obj.title;
+          }
         }
-      }
 
-      // Convert ast to hierarchical tree
-      const tree = markdownAstToTree(ast);
+        // Convert ast to hierarchical tree
+        const tree = markdownAstToTree(ast);
 
-      let nodes: NodeObj[];
-      let rootTopic = title;
+        let nodes: NodeObj[];
+        let rootTopic = title;
 
-      if (useH1AsRoot) {
-        const h1Index = tree.children.findIndex(
-          (child) => child.type === 'heading' && (child.object as Heading).depth === 1
-        );
-        if (h1Index !== -1) {
-          const h1 = tree.children[h1Index];
-          rootTopic = extractText(h1.object);
-          nodes = treeToMindElixir(h1.children);
+        if (useH1AsRoot) {
+          const h1Index = tree.children.findIndex(
+            (child) => child.type === 'heading' && (child.object as Heading).depth === 1
+          );
+          if (h1Index !== -1) {
+            const h1 = tree.children[h1Index];
+            rootTopic = extractText(h1.object);
+            nodes = treeToMindElixir(h1.children);
+          } else {
+            nodes = treeToMindElixir(tree.children);
+          }
         } else {
           nodes = treeToMindElixir(tree.children);
         }
-      } else {
-        nodes = treeToMindElixir(tree.children);
-      }
 
-      data = {
-        topic: rootTopic,
-        id: 'root',
-        children: nodes,
-      };
-    }
+        data = {
+          topic: rootTopic,
+          id: 'root',
+          children: nodes,
+        };
+      }
+      return { data, title };
+    };
+
+    const parsed = getParsedData(documentContent);
+    const data = parsed.data;
+    const title = parsed.title;
 
     const mindElixirPanel = new MindElixirPanel(
       context.extensionUri,
@@ -284,6 +291,8 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
 
     await mindElixirPanel.init(data);
 
+    let isUpdatingFromWebview = false;
+
     // Handle messages from webview
     mindElixirPanel.panel.webview.onDidReceiveMessage(async (message: any) => {
       switch (message.command) {
@@ -291,14 +300,19 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           // Plaintext bidirectional editing: write mind map data back to file
           if (!isPlaintext) return;
           try {
+            isUpdatingFromWebview = true;
             const plaintext = mindElixirToPlaintext(message.data);
             const encoder = new TextEncoder();
             await vscode.workspace.fs.writeFile(
               document.uri,
               encoder.encode(plaintext)
             );
+            setTimeout(() => {
+              isUpdatingFromWebview = false;
+            }, 500);
           } catch (e) {
             vscode.window.showErrorMessage(`Mark Elixir: failed to save file: ${e}`);
+            isUpdatingFromWebview = false;
           }
           return;
         }
@@ -307,6 +321,37 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
       }
     });
 
-    context.subscriptions.push(mindElixirPanel.panel);
+    let updateTimer: NodeJS.Timeout | null = null;
+
+    const changeDocumentSubscription = vscode.workspace.onDidChangeTextDocument((e) => {
+      if (e.document.uri.toString() === document.uri.toString()) {
+        if (isUpdatingFromWebview) return;
+        
+        if (updateTimer) {
+          clearTimeout(updateTimer);
+        }
+        updateTimer = setTimeout(() => {
+          try {
+            const updatedText = e.document.getText();
+            const { data: updatedData } = getParsedData(updatedText);
+            mindElixirPanel.panel.webview.postMessage({
+              command: 'updateData',
+              data: updatedData,
+            });
+          } catch (err) {
+            console.error('Error updating mind map data:', err);
+          }
+        }, 300); // debounce 300ms
+      }
+    });
+
+    mindElixirPanel.panel.onDidDispose(() => {
+      changeDocumentSubscription.dispose();
+      if (updateTimer) {
+        clearTimeout(updateTimer);
+      }
+    });
+
+    context.subscriptions.push(mindElixirPanel.panel, changeDocumentSubscription);
   };
 };

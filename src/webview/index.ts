@@ -182,3 +182,16 @@ if (vsc) {
   });
   toolBar?.appendChild(downloadHtmlBtn);
 }
+
+// Listen for updates from the extension
+window.addEventListener('message', event => {
+  const message = event.data;
+  switch (message.command) {
+    case 'updateData':
+      if (mind) {
+        mind.nodeData = message.data;
+        mind.refresh();
+      }
+      break;
+  }
+});
