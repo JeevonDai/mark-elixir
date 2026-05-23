@@ -86,6 +86,24 @@ git push origin master --tags
 
 ---
 
+## ⚠️ Common Pitfalls & Troubleshooting
+
+When creating or publishing new extensions (especially if copying from an existing template), watch out for these common issues:
+
+1. **Publisher Name Mismatch**:
+   - If the `publisher` field in your `package.json` does not match the actual publisher your Personal Access Token (PAT) is assigned to, or you simply forget to update it from a boilerplate, the extension might be published to the wrong namespace or throw a `TF400813: not authorized` error.
+   - **Fix**: Always double-check `"publisher": "YourPublisherName"` in `package.json` before publishing.
+
+2. **Forgetting the Extension Icon**:
+   - It's easy to forget to add an icon for a new extension.
+   - **Fix**: Generate a 128x128 (or larger) square image, place it in the root folder, and add `"icon": "icon.png"` in your `package.json`.
+
+3. **Token Security in New Projects**:
+   - While this template has token files ignored, **if you start a new project from scratch**, you might forget to ignore them.
+   - **Fix**: Always ensure `.vsce-token` and `.ovsx-token` are added to **both** `.gitignore` and `.vscodeignore` before pasting your tokens.
+
+---
+
 ## 🔗 Useful Links
 - **VS Code Marketplace**: [MindElixir.mark-elixir](https://marketplace.visualstudio.com/items?itemName=MindElixir.mark-elixir)
 - **Publisher Dashboard (VS Code)**: [Marketplace Publisher Hub](https://marketplace.visualstudio.com/manage/publishers/MindElixir/extensions/mark-elixir/hub)
