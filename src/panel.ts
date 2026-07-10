@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { getFileContentAsString, saveFile } from './utils';
 import { NodeObj } from 'mind-elixir';
 
@@ -10,7 +11,18 @@ export class MindElixirPanel {
     name: string,
     private readonly isPlaintext: boolean = false,
     private readonly locale: string = 'en',
+    sourceDocumentUri?: vscode.Uri,
   ) {
+    const workspaceRoots = vscode.workspace.workspaceFolders?.map((folder) => folder.uri) ?? [];
+    const localResourceRoots = [
+      _extensionUri,
+      ...workspaceRoots,
+    ];
+
+    if (sourceDocumentUri?.scheme === 'file') {
+      localResourceRoots.push(vscode.Uri.file(path.dirname(sourceDocumentUri.fsPath)));
+    }
+
     const panel = vscode.window.createWebviewPanel(
       'mindElixir',
       name,
@@ -19,6 +31,7 @@ export class MindElixirPanel {
         // Enable scripts in the webview
         enableScripts: true,
         retainContextWhenHidden: true,
+        localResourceRoots,
       }
     );
     this.panel = panel;

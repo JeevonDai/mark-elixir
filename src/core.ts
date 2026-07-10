@@ -8,8 +8,8 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeStringify from 'rehype-stringify';
 import { unified } from 'unified';
 import { MindElixirPanel } from './panel';
-import type { Heading, List, Paragraph, RootContent, Yaml } from 'mdast';
-import type { Root } from 'hast';
+import type { Heading, Image, List, Root as MdastRoot, Yaml } from 'mdast';
+import type { Root as HastRoot } from 'hast';
 import { NodeObj } from 'mind-elixir';
 import { plaintextToMindElixir, mindElixirToPlaintext } from 'mind-elixir/plaintextConverter';
 import type { Plugin } from 'unified';
@@ -94,23 +94,178 @@ const markdownAstToTree = (ast: any): TreeItem => {
   return treeItem;
 };
 
-const addWidthAndHeight: Plugin<[], Root> = () =>
+const addWidthAndHeight: Plugin<[], HastRoot> = () =>
   function transformer(tree) {
     visit(tree, 'element', function visitor(node) {
       if (node.tagName === 'img') {
-        node.properties.width = 200;
-        node.properties.height = 100;
+        node.properties.width = node.properties.width ?? 200;
+        node.properties.height = node.properties.height ?? 100;
       }
     });
   };
 
-const htmlProcessor = unified()
+function isRemoteOrDataUrl(url: string): boolean {
+  return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url);
+}
+
+function stripUrlWrapper(url: string): string {
+  const trimmed = url.trim();
+  if (trimmed.startsWith('<') && trimmed.endsWith('>')) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed;
+}
+
+function resolveMarkdownImageUrl(
+  url: string,
+  document: vscode.TextDocument,
+  webview: vscode.Webview
+): string {
+  const cleanUrl = stripUrlWrapper(url);
+  if (!cleanUrl || isRemoteOrDataUrl(cleanUrl) || cleanUrl.startsWith('#')) {
+    return cleanUrl;
+  }
+
+  const hashIndex = cleanUrl.indexOf('#');
+  const queryIndex = cleanUrl.indexOf('?');
+  const suffixIndexCandidates = [hashIndex, queryIndex].filter((index) => index >= 0);
+  const suffixIndex = suffixIndexCandidates.length > 0 ? Math.min(...suffixIndexCandidates) : -1;
+  const resourcePath = suffixIndex >= 0 ? cleanUrl.slice(0, suffixIndex) : cleanUrl;
+  const suffix = suffixIndex >= 0 ? cleanUrl.slice(suffixIndex) : '';
+
+  try {
+    const decodedPath = decodeURI(resourcePath);
+    const fsPath = path.isAbsolute(decodedPath)
+      ? decodedPath
+      : path.resolve(path.dirname(document.fileName), decodedPath);
+    const webviewUri = webview.asWebviewUri(vscode.Uri.file(fsPath)).toString();
+    return `${webviewUri}${suffix}`;
+  } catch {
+    return cleanUrl;
+  }
+}
+
+function parseFoamImageTarget(target: string): Image | null {
+  const [rawUrl, ...rawOptions] = target.split('|').map((part) => part.trim());
+  if (!rawUrl) return null;
+
+  const imageNode: Image = {
+    type: 'image',
+    url: rawUrl,
+    alt: path.basename(rawUrl),
+  };
+  const option = rawOptions.join('|').trim();
+
+  if (option) {
+    const sizeMatch = option.match(/^(\d+)(?:x(\d+))?$/i);
+    if (sizeMatch) {
+      imageNode.data = {
+        hProperties: {
+          width: Number(sizeMatch[1]),
+          ...(sizeMatch[2] ? { height: Number(sizeMatch[2]) } : {}),
+        },
+      };
+    } else {
+      imageNode.alt = option;
+    }
+  }
+
+  return imageNode;
+}
+
+const foamImageLinks: Plugin<[], MdastRoot> = () =>
+  function transformer(tree) {
+    visit(tree, (node: any) => {
+      if (!Array.isArray(node.children)) return;
+
+      const nextChildren: any[] = [];
+      let changed = false;
+
+      for (const child of node.children) {
+        if (child.type !== 'text' || typeof child.value !== 'string') {
+          nextChildren.push(child);
+          continue;
+        }
+
+        const value = child.value;
+        const pattern = /!\[\[([^\]\n]+)\]\]/g;
+        let lastIndex = 0;
+        let match: RegExpExecArray | null;
+        let matched = false;
+
+        while ((match = pattern.exec(value)) !== null) {
+          matched = true;
+          if (match.index > lastIndex) {
+            nextChildren.push({
+              ...child,
+              value: value.slice(lastIndex, match.index),
+            });
+          }
+
+          const imageNode = parseFoamImageTarget(match[1]);
+          if (imageNode) {
+            nextChildren.push(imageNode);
+          } else {
+            nextChildren.push({
+              ...child,
+              value: match[0],
+            });
+          }
+
+          lastIndex = pattern.lastIndex;
+        }
+
+        if (matched) {
+          changed = true;
+          if (lastIndex < value.length) {
+            nextChildren.push({
+              ...child,
+              value: value.slice(lastIndex),
+            });
+          }
+        } else {
+          nextChildren.push(child);
+        }
+      }
+
+      if (changed) {
+        node.children = nextChildren;
+      }
+    });
+  };
+
+const localImageUris = (
+  document: vscode.TextDocument,
+  webview: vscode.Webview
+): Plugin<[], MdastRoot> => () =>
+  function transformer(tree) {
+    visit(tree, 'image', (node) => {
+      node.url = resolveMarkdownImageUrl(node.url, document, webview);
+    });
+  };
+
+const createMarkdownProcessor = (
+  document: vscode.TextDocument,
+  webview: vscode.Webview
+) => unified()
+  .use(remarkParse)
+  .use(remarkFrontmatter)
+  .use(remarkGfm)
+  .use(foamImageLinks)
+  .use(localImageUris(document, webview));
+
+const createHtmlProcessor = (
+  document: vscode.TextDocument,
+  webview: vscode.Webview
+) => unified()
+  .use(foamImageLinks)
+  .use(localImageUris(document, webview))
   .use(remarkRehype)
   .use(rehypeHighlight)
   .use(addWidthAndHeight)
   .use(rehypeStringify);
 
-const processList = (list: List): NodeObj[] => {
+const processList = (list: List, htmlProcessor: any): NodeObj[] => {
   return list.children.map((listItem) => {
     const result: NodeObj = {
       topic: '',
@@ -134,24 +289,24 @@ const processList = (list: List): NodeObj[] => {
     }
 
     if (nestedList && nestedList.type === 'list') {
-      result.children = processList(nestedList);
+      result.children = processList(nestedList, htmlProcessor);
     }
 
     return result;
   });
 };
 
-const treeToMindElixir = (items: TreeItem[]): NodeObj[] => {
+const treeToMindElixir = (items: TreeItem[], htmlProcessor: any): NodeObj[] => {
   const nodes: NodeObj[] = [];
   if (items.length === 1 && items[0].type === 'list') {
-    return processList(items[0].object as List);
+    return processList(items[0].object as List, htmlProcessor);
   }
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     const node = {} as NodeObj;
     nodes.push(node);
     if (item.type === 'list') {
-      node.children = processList(item.object as List);
+      node.children = processList(item.object as List, htmlProcessor);
       node.topic = 'List';
       continue;
     } else {
@@ -176,10 +331,10 @@ const treeToMindElixir = (items: TreeItem[]): NodeObj[] => {
     // KEY FEATURE: Merge following lists into preceding content
     const next = items[i + 1];
     if (next && next.type === 'list') {
-      node.children = processList(next.object as List);
+      node.children = processList(next.object as List, htmlProcessor);
       items.splice(i + 1, 1);
     } else {
-      node.children = treeToMindElixir(item.children);
+      node.children = treeToMindElixir(item.children, htmlProcessor);
     }
   }
   return nodes;
@@ -219,6 +374,17 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
     // Detect Mind Elixir Plaintext format (starts with "- ")
     const isPlaintext = documentContent.trimStart().startsWith('- ');
 
+    const mindElixirPanel = new MindElixirPanel(
+      context.extensionUri,
+      path.basename(document.fileName, path.extname(document.fileName)) + ' - Mark Elixir',
+      isPlaintext,
+      locale,
+      document.uri
+    );
+
+    const markdownProcessor = createMarkdownProcessor(document, mindElixirPanel.panel.webview);
+    const htmlProcessor = createHtmlProcessor(document, mindElixirPanel.panel.webview);
+
     const getParsedData = (text: string) => {
       let data: NodeObj;
       let title = path.basename(document.fileName, path.extname(document.fileName));
@@ -229,11 +395,7 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
         data = mindElixirData.nodeData;
       } else {
         // Parse as Markdown
-        const ast = unified()
-          .use(remarkParse)
-          .use(remarkFrontmatter)
-          .use(remarkGfm)
-          .parse(text);
+        const ast = markdownProcessor.runSync(markdownProcessor.parse(text)) as MdastRoot;
 
         const frontmatter = ast.children.find((child) => child.type === 'yaml');
 
@@ -261,12 +423,12 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           if (h1Index !== -1) {
             const h1 = tree.children[h1Index];
             rootTopic = extractText(h1.object);
-            nodes = treeToMindElixir(h1.children);
+            nodes = treeToMindElixir(h1.children, htmlProcessor);
           } else {
-            nodes = treeToMindElixir(tree.children);
+            nodes = treeToMindElixir(tree.children, htmlProcessor);
           }
         } else {
-          nodes = treeToMindElixir(tree.children);
+          nodes = treeToMindElixir(tree.children, htmlProcessor);
         }
 
         data = {
@@ -281,13 +443,7 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
     const parsed = getParsedData(documentContent);
     const data = parsed.data;
     const title = parsed.title;
-
-    const mindElixirPanel = new MindElixirPanel(
-      context.extensionUri,
-      title + ' - Mark Elixir',
-      isPlaintext,
-      locale
-    );
+    mindElixirPanel.panel.title = title + ' - Mark Elixir';
 
     await mindElixirPanel.init(data);
 
