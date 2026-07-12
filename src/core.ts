@@ -9,7 +9,6 @@ import rehypeStringify from 'rehype-stringify';
 import { unified } from 'unified';
 import { MindElixirPanel } from './panel';
 import type { Heading, Image, Link, List, Root as MdastRoot } from 'mdast';
-import type { Root as HastRoot } from 'hast';
 import { NodeObj } from 'mind-elixir';
 import { plaintextToMindElixir, mindElixirToPlaintext } from 'mind-elixir/plaintextConverter';
 import type { Plugin } from 'unified';
@@ -87,16 +86,6 @@ const markdownAstToTree = (ast: any): TreeItem => {
   return treeItem;
 };
 
-const addWidthAndHeight: Plugin<[], HastRoot> = () =>
-  function transformer(tree) {
-    visit(tree, 'element', function visitor(node) {
-      if (node.tagName === 'img') {
-        node.properties.width = node.properties.width ?? 200;
-        node.properties.height = node.properties.height ?? 100;
-      }
-    });
-  };
-
 function isRemoteOrDataUrl(url: string): boolean {
   return /^(?:[a-z][a-z0-9+.-]*:|\/\/)/i.test(url);
 }
@@ -116,11 +105,36 @@ interface SourceRange {
 
 type SourceMappedNode = NodeObj & { sourceRange?: SourceRange };
 
+function getEditableRange(sourceNode: any): SourceRange | undefined {
+  let content = sourceNode;
+  if (sourceNode?.type === 'listItem') {
+    content = sourceNode.children?.find((child: any) => child.type === 'paragraph');
+  } else if (sourceNode?.type === 'blockquote') {
+    const paragraphs = sourceNode.children?.filter((child: any) => child.type === 'paragraph') ?? [];
+    if (paragraphs.length !== 1) return undefined;
+    content = paragraphs[0];
+  }
+  if (content?.type !== 'heading' && content?.type !== 'paragraph') return undefined;
+  const containsImage = (node: any): boolean => node?.type === 'image'
+    || node?.children?.some((child: any) => containsImage(child));
+  if (containsImage(content)) return undefined;
+
+  const children = content.children ?? [];
+  const start = children[0]?.position?.start?.offset;
+  const end = children[children.length - 1]?.position?.end?.offset;
+  if (typeof start === 'number' && typeof end === 'number') return { start, end };
+  return undefined;
+}
+
 function setSourceRange(node: NodeObj, sourceNode: any): void {
   const start = sourceNode?.position?.start?.offset;
   const end = sourceNode?.position?.end?.offset;
   if (typeof start === 'number' && typeof end === 'number') {
     (node as SourceMappedNode).sourceRange = { start, end };
+  }
+  const editableRange = getEditableRange(sourceNode);
+  if (editableRange) {
+    (node as SourceMappedNode & { editableRange?: SourceRange }).editableRange = editableRange;
   }
 }
 
@@ -222,6 +236,25 @@ function resolveMarkdownImageUrl(
     return `${webviewUri}${suffix}`;
   } catch {
     return cleanUrl;
+  }
+}
+
+function resolveImageResourceUri(
+  url: string,
+  document: vscode.TextDocument,
+  resourceIndex: WorkspaceResourceIndex
+): vscode.Uri | undefined {
+  const cleanUrl = stripUrlWrapper(url).split(/[?#]/, 1)[0];
+  if (!cleanUrl || isRemoteOrDataUrl(cleanUrl)) return undefined;
+  try {
+    const decodedPath = decodeURI(cleanUrl);
+    return findIndexedResource(decodedPath, document, resourceIndex.images) ?? vscode.Uri.file(
+      path.isAbsolute(decodedPath)
+        ? decodedPath
+        : path.resolve(path.dirname(document.fileName), decodedPath)
+    );
+  } catch {
+    return undefined;
   }
 }
 
@@ -399,7 +432,6 @@ const createHtmlProcessor = (
       json: ['jsonc'],
     },
   })
-  .use(addWidthAndHeight)
   .use(rehypeStringify);
 
 const processList = (list: List, htmlProcessor: any): NodeObj[] => {
@@ -415,6 +447,7 @@ const processList = (list: List, htmlProcessor: any): NodeObj[] => {
     const nestedList = listItem.children[1];
 
     if (contentNode) {
+      result.topic = extractText(contentNode);
       try {
         const hastNode = htmlProcessor.runSync(contentNode as any);
         const htmlStr = htmlProcessor.stringify(hastNode);
@@ -436,16 +469,18 @@ const processList = (list: List, htmlProcessor: any): NodeObj[] => {
 
 const treeToMindElixir = (items: TreeItem[], htmlProcessor: any): NodeObj[] => {
   const nodes: NodeObj[] = [];
-  if (items.length === 1 && items[0].type === 'list') {
-    return processList(items[0].object as List, htmlProcessor);
-  }
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
-    const node = {} as NodeObj;
+    const node = { topic: extractText(item.object) } as NodeObj;
     nodes.push(node);
     if (item.type === 'list') {
       node.children = processList(item.object as List, htmlProcessor);
-      node.topic = 'List';
+      // A standalone list has no preceding content node to attach to. Keep a
+      // small, clickable placeholder instead of exposing an artificial label.
+      node.topic = '\u200B';
+      node.id = item.object.position?.start?.offset?.toString() || generateId();
+      node.style = { width: '1.25em' };
+      setSourceRange(node, item.object);
       continue;
     } else {
       if (item.type === 'html') {
@@ -606,6 +641,53 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           );
           textEditor.selection = new vscode.Selection(range.start, range.end);
           textEditor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
+          return;
+        }
+        case 'openImage': {
+          if (isPlaintext) return;
+          const start = Number(message.start);
+          const end = Number(message.end);
+          if (!Number.isInteger(start) || !Number.isInteger(end)) return;
+
+          const source = document.getText(new vscode.Range(
+            document.positionAt(start),
+            document.positionAt(end)
+          ));
+          const foamMatch = source.match(/!\[\[([^\]]+)\]\]/);
+          const markdownMatch = source.match(/!\[[^\]]*\]\(\s*(?:<([^>]+)>|([^\s)]+))/);
+          const target = foamMatch?.[1]?.split('|', 1)[0].trim()
+            ?? markdownMatch?.[1]
+            ?? markdownMatch?.[2];
+          if (!target) return;
+
+          if (isRemoteOrDataUrl(target)) {
+            await vscode.env.openExternal(vscode.Uri.parse(target));
+            return;
+          }
+          const imageUri = resolveImageResourceUri(target, document, resourceIndex);
+          if (imageUri) await vscode.commands.executeCommand('vscode.open', imageUri);
+          return;
+        }
+        case 'editSource': {
+          if (isPlaintext) return;
+          const start = Number(message.start);
+          const end = Number(message.end);
+          let text = typeof message.text === 'string' ? message.text.trim() : '';
+          if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || !text) return;
+
+          const startPosition = document.positionAt(start);
+          const linePrefix = document.lineAt(startPosition.line).text.slice(0, startPosition.character);
+          if (/^\s*(?:>\s*)+$/.test(linePrefix)) {
+            text = text.replace(/\r?\n/g, `\n${linePrefix}`);
+          }
+
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(
+            document.uri,
+            new vscode.Range(startPosition, document.positionAt(end)),
+            text
+          );
+          await vscode.workspace.applyEdit(edit);
           return;
         }
         default:

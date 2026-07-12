@@ -25,6 +25,10 @@ interface SourceMappedNode extends NodeObj {
     start: number;
     end: number;
   };
+  editableRange?: {
+    start: number;
+    end: number;
+  };
 }
 
 interface Window {
@@ -164,6 +168,17 @@ function wrapCodeBlocks(root: ParentNode = document): void {
   });
 }
 
+function prepareImages(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLImageElement>('.map-canvas me-tpc img').forEach((img) => {
+    if (img.dataset.mindElixirImage === 'true') return;
+    img.dataset.mindElixirImage = 'true';
+    img.title = img.alt || 'Click to open image';
+    if (!img.complete) {
+      img.addEventListener('load', () => mind?.linkDiv(), { once: true });
+    }
+  });
+}
+
 let data: MindElixirData = { nodeData: injected.nodeData };
 let mind: MindElixirInstance | null = null;
 
@@ -187,7 +202,28 @@ const options: Options = {
 mind = new MindElixir(options);
 mind.init(data);
 wrapCodeBlocks();
+prepareImages();
 mind.linkDiv();
+
+let imageOpenTimer: ReturnType<typeof setTimeout> | null = null;
+mind.container.addEventListener('click', (event) => {
+  const image = (event.target as Element | null)?.closest<HTMLImageElement>('me-tpc img');
+  if (!image) return;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  const topic = image.closest('me-tpc') as any;
+  const node = topic?.nodeObj as SourceMappedNode | undefined;
+  if (!vsc || !node?.sourceRange) return;
+  if (imageOpenTimer) clearTimeout(imageOpenTimer);
+  imageOpenTimer = setTimeout(() => {
+    vsc.postMessage({
+      command: 'openImage',
+      start: node.sourceRange!.start,
+      end: node.sourceRange!.end,
+    });
+    imageOpenTimer = null;
+  }, 250);
+});
 
 // Clicking the file-name root toggles all descendants while keeping the
 // first-level Markdown nodes visible.
@@ -217,6 +253,7 @@ window.addEventListener('resize', () => {
     // width-specific wrap markers before recalculating them for the new width.
     mind.refresh();
     wrapCodeBlocks();
+    prepareImages();
     mind.linkDiv();
     resizeTimer = null;
   }, 120);
@@ -230,15 +267,113 @@ themeObserver.observe(document.body, {
   attributeFilter: ['class'],
 });
 
-// Keep the source editor synchronized with the selected mind-map node.
+// In Markdown mode, one click edits supported text nodes in place. A double
+// click cancels the pending edit and reveals the node in the source document.
 if (!isPlaintext && vsc) {
-  mind.bus.addListener('selectNodes', (nodes: NodeObj[]) => {
-    const node = nodes[nodes.length - 1] as SourceMappedNode | undefined;
-    if (!node?.sourceRange) return;
+  let editTimer: ReturnType<typeof setTimeout> | null = null;
+  let activeMarkdownEdit: { topic: HTMLElement; originalHtml: string } | null = null;
+
+  const beginMarkdownEdit = (topic: HTMLElement & { text?: HTMLElement }) => {
+    if (!mind) return;
+    const renderedContent = topic.querySelector<HTMLElement>(
+      'h1, h2, h3, h4, h5, h6, blockquote p, blockquote, p'
+    ) ?? topic;
+    const renderedStyle = window.getComputedStyle(renderedContent);
+    const horizontalPadding = parseFloat(renderedStyle.paddingLeft)
+      + parseFloat(renderedStyle.paddingRight);
+    const verticalPadding = parseFloat(renderedStyle.paddingTop)
+      + parseFloat(renderedStyle.paddingBottom);
+    const contentWidth = Math.max(1, renderedContent.clientWidth - horizontalPadding);
+    const contentHeight = Math.max(1, renderedContent.clientHeight - verticalPadding);
+    activeMarkdownEdit = { topic, originalHtml: topic.innerHTML };
+
+    // Markdown nodes are rendered from HTML and do not expose Mind Elixir's
+    // normal text element. Use the topic itself, then normalize the generated
+    // editor to the exact rendered box to avoid layout/size jumps.
+    topic.text = topic;
+    mind.editTopic(topic as any);
+    const input = mind.nodes.querySelector<HTMLElement>('#input-box');
+    if (!input) return;
+    // Match the rendered content box rather than its outer box. This avoids a
+    // few pixels of padding/border drift that can wrap one extra character.
+    input.style.boxSizing = 'content-box';
+    input.style.width = `${contentWidth}px`;
+    input.style.minWidth = `${contentWidth}px`;
+    input.style.minHeight = `${contentHeight}px`;
+    input.style.fontFamily = renderedStyle.fontFamily;
+    input.style.fontSize = renderedStyle.fontSize;
+    input.style.fontWeight = renderedStyle.fontWeight;
+    input.style.fontStyle = renderedStyle.fontStyle;
+    input.style.lineHeight = renderedStyle.lineHeight;
+    input.style.letterSpacing = renderedStyle.letterSpacing;
+    input.style.wordSpacing = renderedStyle.wordSpacing;
+    input.style.textIndent = renderedStyle.textIndent;
+    input.style.tabSize = renderedStyle.tabSize;
+    input.style.padding = renderedStyle.padding;
+    input.style.border = renderedStyle.border;
+    input.style.borderRadius = renderedStyle.borderRadius;
+    input.style.backgroundColor = renderedStyle.backgroundColor;
+    input.style.whiteSpace = 'pre-wrap';
+    input.style.overflowWrap = 'anywhere';
+  };
+
+  const restoreRenderedShape = (text: string) => {
+    if (!activeMarkdownEdit) return;
+    const { topic, originalHtml } = activeMarkdownEdit;
+    const template = document.createElement('template');
+    template.innerHTML = originalHtml;
+    const content = template.content.querySelector<HTMLElement>(
+      'h1, h2, h3, h4, h5, h6, blockquote p, blockquote, p'
+    );
+    if (content) {
+      content.textContent = text;
+      topic.replaceChildren(template.content.cloneNode(true));
+    }
+    activeMarkdownEdit = null;
+  };
+
+  mind.container.addEventListener('click', (event) => {
+    if ((event.target as Element | null)?.closest('img')) return;
+    const topic = (event.target as Element | null)?.closest('me-tpc') as any;
+    const node = topic?.nodeObj as SourceMappedNode | undefined;
+    if (!mind || !topic || !node?.editableRange || topic.closest('me-root')) return;
+
+    if (editTimer) clearTimeout(editTimer);
+    editTimer = setTimeout(() => {
+      beginMarkdownEdit(topic);
+      editTimer = null;
+    }, 250);
+  });
+
+  mind.container.addEventListener('dblclick', (event) => {
+    if (imageOpenTimer) {
+      clearTimeout(imageOpenTimer);
+      imageOpenTimer = null;
+    }
+    if (editTimer) {
+      clearTimeout(editTimer);
+      editTimer = null;
+    }
+    const topic = (event.target as Element | null)?.closest('me-tpc') as any;
+    const node = topic?.nodeObj as SourceMappedNode | undefined;
+    if (!node?.sourceRange || topic.closest('me-root')) return;
     vsc.postMessage({
       command: 'revealSource',
       start: node.sourceRange.start,
       end: node.sourceRange.end,
+    });
+  });
+
+  mind.bus.addListener('operation', (operation: any) => {
+    if (operation?.name !== 'finishEdit') return;
+    const node = operation.obj as SourceMappedNode | undefined;
+    if (!node?.editableRange) return;
+    restoreRenderedShape(node.topic);
+    vsc.postMessage({
+      command: 'editSource',
+      start: node.editableRange.start,
+      end: node.editableRange.end,
+      text: node.topic,
     });
   });
 }
@@ -337,6 +472,7 @@ window.addEventListener('message', event => {
         mind.nodeData = message.data;
         mind.refresh();
         wrapCodeBlocks();
+        prepareImages();
         mind.linkDiv();
       }
       break;

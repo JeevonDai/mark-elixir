@@ -29,7 +29,13 @@ me-main > me-wrapper {
 
 .map-canvas img {
   display: block;
+  width: auto;
+  height: auto;
+  max-width: min(480px, 50vw);
+  max-height: min(320px, 50vh);
   object-fit: contain;
+  cursor: pointer;
+  pointer-events: auto;
 }
 
 .map-canvas pre {
@@ -70,4 +76,42 @@ me-main > me-wrapper {
 .map-canvas h6,
 .map-canvas p {
   margin: 0;
+}
+
+/* Render quotes without browser indent, using a theme-aware marker and surface. */
+.map-canvas blockquote {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.45em;
+  margin: 0;
+  padding: 0;
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.12));
+}
+
+.map-canvas blockquote::before {
+  content: ">";
+  flex: none;
+  color: var(--vscode-textBlockQuote-border, var(--vscode-descriptionForeground));
+  font-weight: 700;
+  user-select: none;
+}
+
+.vscode-light .map-canvas blockquote::before {
+  color: var(--vscode-textLink-activeForeground, #315f8c);
+}
+
+.vscode-dark .map-canvas blockquote {
+  background: rgba(70, 105, 150, 0.3);
+}
+
+.vscode-dark .map-canvas blockquote::before {
+  color: var(--vscode-textLink-foreground, #75b7ff);
+}
+
+.vscode-high-contrast .map-canvas blockquote {
+  background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.25));
+}
+
+.vscode-high-contrast .map-canvas blockquote::before {
+  color: var(--vscode-contrastActiveBorder, currentColor);
 }
