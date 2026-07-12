@@ -116,6 +116,21 @@ function stripUrlWrapper(url: string): string {
   return trimmed;
 }
 
+interface SourceRange {
+  start: number;
+  end: number;
+}
+
+type SourceMappedNode = NodeObj & { sourceRange?: SourceRange };
+
+function setSourceRange(node: NodeObj, sourceNode: any): void {
+  const start = sourceNode?.position?.start?.offset;
+  const end = sourceNode?.position?.end?.offset;
+  if (typeof start === 'number' && typeof end === 'number') {
+    (node as SourceMappedNode).sourceRange = { start, end };
+  }
+}
+
 interface WorkspaceResourceIndex {
   images: Map<string, vscode.Uri[]>;
   notes: Map<string, vscode.Uri[]>;
@@ -392,6 +407,7 @@ const processList = (list: List, htmlProcessor: any): NodeObj[] => {
       id: generateId(),
       children: [],
     };
+    setSourceRange(result, listItem);
 
     const contentNode = listItem.children[0];
     const nestedList = listItem.children[1];
@@ -447,6 +463,7 @@ const treeToMindElixir = (items: TreeItem[], htmlProcessor: any): NodeObj[] => {
 
     // Generate ID
     node.id = item.object.position?.start?.offset?.toString() || generateId();
+    setSourceRange(node, item.object);
 
     // KEY FEATURE: Merge following lists into preceding content
     const next = items[i + 1];
@@ -565,6 +582,12 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           id: 'root',
           children: nodes,
         };
+        if (useH1AsRoot) {
+          const h1 = tree.children.find(
+            (child) => child.type === 'heading' && (child.object as Heading).depth === 1
+          );
+          if (h1) setSourceRange(data, h1.object);
+        }
       }
       return { data, title };
     };
@@ -599,6 +622,24 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
             vscode.window.showErrorMessage(`Mark Elixir: failed to save file: ${e}`);
             isUpdatingFromWebview = false;
           }
+          return;
+        }
+        case 'revealSource': {
+          if (isPlaintext) return;
+          const start = Number(message.start);
+          const end = Number(message.end);
+          if (!Number.isInteger(start) || !Number.isInteger(end)) return;
+
+          const textEditor = await vscode.window.showTextDocument(document, {
+            viewColumn: editor.viewColumn,
+            preserveFocus: false,
+          });
+          const range = new vscode.Range(
+            document.positionAt(start),
+            document.positionAt(end)
+          );
+          textEditor.selection = new vscode.Selection(range.start, range.end);
+          textEditor.revealRange(range, vscode.TextEditorRevealType.InCenterIfOutsideViewport);
           return;
         }
         default:

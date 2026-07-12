@@ -27,6 +27,9 @@ Foam embeds that target Markdown files or extensionless note names, such as
 `![[another-note.md]]` and `![[another-note]]`, are rendered as links that open
 the matching note instead of broken images.
 
+Selecting a mind-map node also selects and reveals its corresponding source
+range in the Markdown editor.
+
 **Enjoy!**
 
 ## Configuration

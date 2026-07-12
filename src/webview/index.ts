@@ -20,6 +20,13 @@ interface InjectedData {
   locale?: string;
 }
 
+interface SourceMappedNode extends NodeObj {
+  sourceRange?: {
+    start: number;
+    end: number;
+  };
+}
+
 interface Window {
   injectedData: InjectedData;
   acquireVsCodeApi(): {
@@ -101,6 +108,19 @@ const options: Options = {
 
 mind = new MindElixir(options);
 mind.init(data);
+
+// Keep the source editor synchronized with the selected mind-map node.
+if (!isPlaintext && vsc) {
+  mind.bus.addListener('selectNodes', (nodes: NodeObj[]) => {
+    const node = nodes[nodes.length - 1] as SourceMappedNode | undefined;
+    if (!node?.sourceRange) return;
+    vsc.postMessage({
+      command: 'revealSource',
+      start: node.sourceRange.start,
+      end: node.sourceRange.end,
+    });
+  });
+}
 
 // ─── Plaintext Bidirectional Editing ─────────────────────────────────────────
 if (isPlaintext && vsc) {
