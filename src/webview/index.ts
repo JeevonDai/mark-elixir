@@ -86,6 +86,84 @@ const injected: InjectedData = window.injectedData;
 const isPlaintext = injected.isPlaintext ?? false;
 const langPack = resolveLocale(injected.locale);
 
+function isDarkTheme(): boolean {
+  return document.body.classList.contains('vscode-dark')
+    || document.body.classList.contains('vscode-high-contrast');
+}
+
+function getMindTheme() {
+  return isDarkTheme() ? MindElixir.DARK_THEME : MindElixir.THEME;
+}
+
+const MAX_CODE_WRAP_COLUMNS = 96;
+
+function getCodeWrapColumns(code: HTMLElement): number {
+  const style = window.getComputedStyle(code);
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  if (!context) return MAX_CODE_WRAP_COLUMNS;
+
+  context.font = [
+    style.fontStyle,
+    style.fontWeight,
+    style.fontSize,
+    style.fontFamily,
+  ].join(' ');
+  const characterWidth = context.measureText('0').width || 8;
+  const horizontalPadding = parseFloat(style.paddingLeft) + parseFloat(style.paddingRight);
+  const contentWidth = Math.max(0, code.clientWidth - horizontalPadding);
+  return Math.max(16, Math.min(
+    MAX_CODE_WRAP_COLUMNS,
+    Math.floor(contentWidth / characterWidth)
+  ));
+}
+
+function wrapCodeBlocks(root: ParentNode = document): void {
+  root.querySelectorAll<HTMLElement>('pre code').forEach((code) => {
+    if (code.dataset.wrapped === 'true') return;
+    code.dataset.wrapped = 'true';
+
+    const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
+    const textNodes: Text[] = [];
+    const wrapColumns = getCodeWrapColumns(code);
+    let current: Node | null;
+    while ((current = walker.nextNode())) textNodes.push(current as Text);
+
+    let column = 0;
+    for (const textNode of textNodes) {
+      const fragment = document.createDocumentFragment();
+      let chunk = '';
+
+      for (const character of textNode.data) {
+        if (character === '\n') {
+          chunk += character;
+          column = 0;
+          continue;
+        }
+
+        if (column >= wrapColumns) {
+          if (chunk) fragment.append(document.createTextNode(chunk));
+          chunk = '';
+          fragment.append(document.createTextNode('\n'));
+          const marker = document.createElement('span');
+          marker.className = 'code-wrap-marker';
+          marker.setAttribute('aria-hidden', 'true');
+          marker.textContent = '↪ ';
+          fragment.append(marker);
+          // Reserve the visual width occupied by the continuation marker.
+          column = 2;
+        }
+
+        chunk += character;
+        column += character === '\t' ? 4 : 1;
+      }
+
+      if (chunk) fragment.append(document.createTextNode(chunk));
+      textNode.replaceWith(fragment);
+    }
+  });
+}
+
 let data: MindElixirData = { nodeData: injected.nodeData };
 let mind: MindElixirInstance | null = null;
 
@@ -101,13 +179,37 @@ const options: Options = {
   toolBar: true,
   keypress: isPlaintext,
   allowUndo: isPlaintext,
-  theme: MindElixir.DARK_THEME,
+  theme: getMindTheme(),
   // Render KaTeX math formulas in node topics
   markdown: (str: string) => renderMath(str),
 };
 
 mind = new MindElixir(options);
 mind.init(data);
+wrapCodeBlocks();
+mind.linkDiv();
+
+let resizeTimer: ReturnType<typeof setTimeout> | null = null;
+window.addEventListener('resize', () => {
+  if (resizeTimer) clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (!mind) return;
+    // refresh() reconstructs code markup from nodeData, removing the previous
+    // width-specific wrap markers before recalculating them for the new width.
+    mind.refresh();
+    wrapCodeBlocks();
+    mind.linkDiv();
+    resizeTimer = null;
+  }, 120);
+});
+
+const themeObserver = new MutationObserver(() => {
+  mind?.changeTheme(getMindTheme());
+});
+themeObserver.observe(document.body, {
+  attributes: true,
+  attributeFilter: ['class'],
+});
 
 // Keep the source editor synchronized with the selected mind-map node.
 if (!isPlaintext && vsc) {
@@ -215,6 +317,8 @@ window.addEventListener('message', event => {
       if (mind) {
         mind.nodeData = message.data;
         mind.refresh();
+        wrapCodeBlocks();
+        mind.linkDiv();
       }
       break;
   }

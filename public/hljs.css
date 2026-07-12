@@ -1,9 +1,156 @@
-/*!
-  Theme: Default
-  Description: Original highlight.js style
-  Author: (c) Ivan Sagalaev <maniac@softwaremaniacs.org>
-  Maintainer: @highlightjs/core-team
-  Website: https://highlightjs.org/
-  License: see project LICENSE
-  Touched: 2021
-*/pre code.hljs{display:block;overflow-x:auto;padding:1em}code.hljs{padding:3px 5px}.hljs{background:#f3f3f3;color:#444}.hljs-comment{color:#697070}.hljs-punctuation,.hljs-tag{color:#444a}.hljs-tag .hljs-attr,.hljs-tag .hljs-name{color:#444}.hljs-attribute,.hljs-doctag,.hljs-keyword,.hljs-meta .hljs-keyword,.hljs-name,.hljs-selector-tag{font-weight:700}.hljs-deletion,.hljs-number,.hljs-quote,.hljs-selector-class,.hljs-selector-id,.hljs-string,.hljs-template-tag,.hljs-type{color:#800}.hljs-section,.hljs-title{color:#800;font-weight:700}.hljs-link,.hljs-operator,.hljs-regexp,.hljs-selector-attr,.hljs-selector-pseudo,.hljs-symbol,.hljs-template-variable,.hljs-variable{color:#ab5656}.hljs-literal{color:#695}.hljs-addition,.hljs-built_in,.hljs-bullet,.hljs-code{color:#397300}.hljs-meta{color:#1f7199}.hljs-meta .hljs-string{color:#38a}.hljs-emphasis{font-style:italic}.hljs-strong{font-weight:700}
+/* Highlight.js tokens mapped to VS Code theme colors. */
+.hljs {
+  color: var(--vscode-editor-foreground) !important;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background)) !important;
+}
+
+.hljs-comment,
+.hljs-quote {
+  color: var(--vscode-descriptionForeground, #6a9955) !important;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-section,
+.hljs-link {
+  color: var(--vscode-symbolIcon-keywordForeground, #c586c0) !important;
+}
+
+.hljs-string,
+.hljs-title,
+.hljs-name,
+.hljs-type,
+.hljs-attribute,
+.hljs-symbol,
+.hljs-bullet,
+.hljs-addition,
+.hljs-template-tag,
+.hljs-template-variable {
+  color: var(--vscode-symbolIcon-stringForeground, #ce9178) !important;
+}
+
+.hljs-number,
+.hljs-meta,
+.hljs-built_in,
+.hljs-builtin-name,
+.hljs-params {
+  color: var(--vscode-symbolIcon-numberForeground, #b5cea8) !important;
+}
+
+.hljs-variable,
+.hljs-selector-class,
+.hljs-selector-id,
+.hljs-regexp,
+.hljs-deletion {
+  color: var(--vscode-symbolIcon-variableForeground, #9cdcfe) !important;
+}
+
+.hljs-function,
+.hljs-title.function_,
+.hljs-title.class_ {
+  color: var(--vscode-symbolIcon-functionForeground, #dcdcaa) !important;
+}
+
+.hljs-operator,
+.hljs-punctuation,
+.hljs-tag {
+  color: var(--vscode-editor-foreground) !important;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* Mind Elixir applies node colors with more specific selectors. Keep syntax
+   tokens explicit inside topics so they remain visible in every VS Code theme. */
+.vscode-dark .map-canvas me-tpc .hljs-comment,
+.vscode-high-contrast .map-canvas me-tpc .hljs-comment,
+.vscode-dark .map-canvas me-tpc .hljs-quote,
+.vscode-high-contrast .map-canvas me-tpc .hljs-quote {
+  color: #6a9955 !important;
+}
+
+.vscode-dark .map-canvas me-tpc .hljs-keyword,
+.vscode-high-contrast .map-canvas me-tpc .hljs-keyword,
+.vscode-dark .map-canvas me-tpc .hljs-selector-tag,
+.vscode-high-contrast .map-canvas me-tpc .hljs-selector-tag,
+.vscode-dark .map-canvas me-tpc .hljs-literal,
+.vscode-high-contrast .map-canvas me-tpc .hljs-literal {
+  color: #c586c0 !important;
+}
+
+.vscode-dark .map-canvas me-tpc .hljs-string,
+.vscode-high-contrast .map-canvas me-tpc .hljs-string,
+.vscode-dark .map-canvas me-tpc .hljs-attribute,
+.vscode-high-contrast .map-canvas me-tpc .hljs-attribute,
+.vscode-dark .map-canvas me-tpc .hljs-symbol,
+.vscode-high-contrast .map-canvas me-tpc .hljs-symbol {
+  color: #ce9178 !important;
+}
+
+.vscode-dark .map-canvas me-tpc .hljs-number,
+.vscode-high-contrast .map-canvas me-tpc .hljs-number,
+.vscode-dark .map-canvas me-tpc .hljs-literal,
+.vscode-high-contrast .map-canvas me-tpc .hljs-literal {
+  color: #b5cea8 !important;
+}
+
+.vscode-dark .map-canvas me-tpc .hljs-type,
+.vscode-high-contrast .map-canvas me-tpc .hljs-type,
+.vscode-dark .map-canvas me-tpc .hljs-built_in,
+.vscode-high-contrast .map-canvas me-tpc .hljs-built_in {
+  color: #4ec9b0 !important;
+}
+
+.vscode-dark .map-canvas me-tpc .hljs-title,
+.vscode-high-contrast .map-canvas me-tpc .hljs-title,
+.vscode-dark .map-canvas me-tpc .hljs-function,
+.vscode-high-contrast .map-canvas me-tpc .hljs-function {
+  color: #dcdcaa !important;
+}
+
+.vscode-dark .map-canvas me-tpc .hljs-meta,
+.vscode-high-contrast .map-canvas me-tpc .hljs-meta {
+  color: #c8c8c8 !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-comment,
+.vscode-light .map-canvas me-tpc .hljs-quote {
+  color: #008000 !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-keyword,
+.vscode-light .map-canvas me-tpc .hljs-selector-tag,
+.vscode-light .map-canvas me-tpc .hljs-literal {
+  color: #0000ff !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-string,
+.vscode-light .map-canvas me-tpc .hljs-attribute,
+.vscode-light .map-canvas me-tpc .hljs-symbol {
+  color: #a31515 !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-number {
+  color: #098658 !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-type,
+.vscode-light .map-canvas me-tpc .hljs-built_in {
+  color: #267f99 !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-title,
+.vscode-light .map-canvas me-tpc .hljs-function {
+  color: #795e26 !important;
+}
+
+.vscode-light .map-canvas me-tpc .hljs-meta {
+  color: #af00db !important;
+}

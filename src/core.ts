@@ -396,7 +396,16 @@ const createHtmlProcessor = (
   .use(foamImageLinks)
   .use(localImageUris(document, webview, resourceIndex))
   .use(remarkRehype)
-  .use(rehypeHighlight)
+  .use(rehypeHighlight, {
+    detect: true,
+    aliases: {
+      cpp: ['c++', 'cc', 'cxx', 'h', 'hh', 'hpp', 'hxx'],
+      bash: ['sh', 'zsh'],
+      shell: ['shellscript'],
+      yaml: ['yml'],
+      json: ['jsonc'],
+    },
+  })
   .use(addWidthAndHeight)
   .use(rehypeStringify);
 

@@ -30,6 +30,16 @@ the matching note instead of broken images.
 Selecting a mind-map node also selects and reveals its corresponding source
 range in the Markdown editor.
 
+Fenced code blocks are syntax-highlighted according to their language. Their
+colors and background follow the active VS Code theme, and long lines wrap with
+a `↪` continuation marker instead of showing a horizontal scrollbar. Wrapping
+is recalculated when the preview width changes.
+Code blocks share the same maximum width as regular node text.
+
+Common fenced-code languages include C/C++ (`c`, `cpp`, `c++`, `cc`), shell
+scripts (`bash`, `sh`, `shell`, `zsh`), YAML (`yaml`, `yml`), and JSON
+(`json`, `jsonc`).
+
 **Enjoy!**
 
 ## Configuration

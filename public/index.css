@@ -10,10 +10,18 @@
 body {
   padding: 0;
   margin: 0;
+  color: var(--vscode-editor-foreground);
+  background: var(--vscode-editor-background);
 }
 #map {
   height: 100vh;
   width: 100vw;
+  background: var(--vscode-editor-background);
+}
+
+/* Keep regular text and code blocks on the same, slightly wider node measure. */
+.map-container me-tpc {
+  max-width: 48em;
 }
 me-main > me-wrapper {
   margin: 10px !important;
@@ -22,6 +30,35 @@ me-main > me-wrapper {
 .map-canvas img {
   display: block;
   object-fit: contain;
+}
+
+.map-canvas pre {
+  width: 100%;
+  max-width: 100%;
+  margin: 0.35em 0;
+  overflow: visible;
+  border: 1px solid var(--vscode-widget-border, transparent);
+  border-radius: 5px;
+  background: var(--vscode-textCodeBlock-background, var(--vscode-editor-background));
+}
+
+.map-canvas pre code {
+  display: block;
+  overflow: visible;
+  padding: 0.75em 0.9em;
+  font-family: var(--vscode-editor-font-family, monospace);
+  font-size: var(--vscode-editor-font-size, 13px);
+  line-height: 1.45;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.code-wrap-marker {
+  color: var(--vscode-editorWhitespace-foreground, #808080);
+  font-weight: 400;
+  user-select: none;
+  opacity: 0.8;
 }
 
 
