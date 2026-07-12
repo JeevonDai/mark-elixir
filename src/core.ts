@@ -8,7 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeStringify from 'rehype-stringify';
 import { unified } from 'unified';
 import { MindElixirPanel } from './panel';
-import type { Heading, Image, Link, List, Root as MdastRoot, Yaml } from 'mdast';
+import type { Heading, Image, Link, List, Root as MdastRoot } from 'mdast';
 import type { Root as HastRoot } from 'hast';
 import { NodeObj } from 'mind-elixir';
 import { plaintextToMindElixir, mindElixirToPlaintext } from 'mind-elixir/plaintextConverter';
@@ -34,13 +34,6 @@ function extractText(node: any): string {
   }
   return '';
 }
-
-const parseFrontmatter = (frontmatter: string) => {
-  const data = frontmatter
-    .split('\n')
-    .map((line) => line.split(':').map((item) => item.trim()));
-  return Object.fromEntries(data);
-};
 
 const markdownAstToTree = (ast: any): TreeItem => {
   const children = ast.children || ast;
@@ -552,51 +545,15 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
         // Parse as Markdown
         const ast = markdownProcessor.runSync(markdownProcessor.parse(text)) as MdastRoot;
 
-        const frontmatter = ast.children.find((child) => child.type === 'yaml');
-
-        // Get configuration value
-        const config = vscode.workspace.getConfiguration('mindElixirMarkdown');
-        const useH1AsRoot = config.get('h1AsRoot');
-
-        if (frontmatter) {
-          const obj = parseFrontmatter((frontmatter as Yaml).value);
-          if (obj.title) {
-            title = obj.title;
-          }
-        }
-
         // Convert ast to hierarchical tree
         const tree = markdownAstToTree(ast);
-
-        let nodes: NodeObj[];
-        let rootTopic = title;
-
-        if (useH1AsRoot) {
-          const h1Index = tree.children.findIndex(
-            (child) => child.type === 'heading' && (child.object as Heading).depth === 1
-          );
-          if (h1Index !== -1) {
-            const h1 = tree.children[h1Index];
-            rootTopic = extractText(h1.object);
-            nodes = treeToMindElixir(h1.children, htmlProcessor);
-          } else {
-            nodes = treeToMindElixir(tree.children, htmlProcessor);
-          }
-        } else {
-          nodes = treeToMindElixir(tree.children, htmlProcessor);
-        }
+        const nodes = treeToMindElixir(tree.children, htmlProcessor);
 
         data = {
-          topic: rootTopic,
+          topic: title,
           id: 'root',
           children: nodes,
         };
-        if (useH1AsRoot) {
-          const h1 = tree.children.find(
-            (child) => child.type === 'heading' && (child.object as Heading).depth === 1
-          );
-          if (h1) setSourceRange(data, h1.object);
-        }
       }
       return { data, title };
     };

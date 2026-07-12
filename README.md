@@ -42,12 +42,6 @@ scripts (`bash`, `sh`, `shell`, `zsh`), YAML (`yaml`, `yml`), and JSON
 
 **Enjoy!**
 
-## Configuration
-
-| Setting                       | Default | Description                                                                      |
-| ----------------------------- | ------- | -------------------------------------------------------------------------------- |
-| `mindElixirMarkdown.h1AsRoot` | `true`  | When enabled, uses the first H1 heading as the root node instead of the filename |
-
 ## Known Issues
 
 [Report issues on GitHub](https://github.com/SSShooter/mark-elixir/issues)

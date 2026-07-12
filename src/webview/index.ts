@@ -189,6 +189,25 @@ mind.init(data);
 wrapCodeBlocks();
 mind.linkDiv();
 
+// Clicking the file-name root toggles all descendants while keeping the
+// first-level Markdown nodes visible.
+mind.container.addEventListener('click', (event) => {
+  if (!mind) return;
+  const target = event.target as Element | null;
+  const rootTopic = target?.closest('me-root > me-tpc');
+  if (!rootTopic || !mind.container.contains(rootTopic)) return;
+
+  const children = mind.nodeData.children ?? [];
+  if (children.length === 0) return;
+  const expand = !children.some((child) => child.expanded !== false);
+  children.forEach((child) => setExpandedAll(child, expand));
+  mind.nodeData.expanded = true;
+  mind.refresh();
+  wrapCodeBlocks();
+  mind.linkDiv();
+  mind.toCenter();
+});
+
 let resizeTimer: ReturnType<typeof setTimeout> | null = null;
 window.addEventListener('resize', () => {
   if (resizeTimer) clearTimeout(resizeTimer);

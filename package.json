@@ -40,17 +40,6 @@
           "group": "navigation"
         }
       ]
-    },
-    "configuration": {
-      "type": "object",
-      "title": "Markdown Mind Map",
-      "properties": {
-        "mindElixirMarkdown.h1AsRoot": {
-          "type": "boolean",
-          "default": true,
-          "description": "If there is exactly one top-level heading (h1), use it as the root node instead of the file name"
-        }
-      }
     }
   },
   "scripts": {
