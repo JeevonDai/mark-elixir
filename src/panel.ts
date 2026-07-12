@@ -30,6 +30,7 @@ export class MindElixirPanel {
       {
         // Enable scripts in the webview
         enableScripts: true,
+        enableCommandUris: true,
         retainContextWhenHidden: true,
         localResourceRoots,
       }

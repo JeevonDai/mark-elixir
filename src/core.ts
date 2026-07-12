@@ -8,7 +8,7 @@ import rehypeHighlight from 'rehype-highlight';
 import rehypeStringify from 'rehype-stringify';
 import { unified } from 'unified';
 import { MindElixirPanel } from './panel';
-import type { Heading, Image, List, Root as MdastRoot, Yaml } from 'mdast';
+import type { Heading, Image, Link, List, Root as MdastRoot, Yaml } from 'mdast';
 import type { Root as HastRoot } from 'hast';
 import { NodeObj } from 'mind-elixir';
 import { plaintextToMindElixir, mindElixirToPlaintext } from 'mind-elixir/plaintextConverter';
@@ -116,10 +116,79 @@ function stripUrlWrapper(url: string): string {
   return trimmed;
 }
 
+interface WorkspaceResourceIndex {
+  images: Map<string, vscode.Uri[]>;
+  notes: Map<string, vscode.Uri[]>;
+}
+
+const imageExtensions = new Set([
+  '.avif', '.bmp', '.gif', '.ico', '.jpeg', '.jpg', '.png', '.svg', '.webp',
+]);
+const workspaceResourcePattern = '**/*.{avif,bmp,gif,ico,jpeg,jpg,markdown,md,png,svg,webp}';
+const workspaceResourceExclude = '**/{.git,node_modules}/**';
+
+function addToIndex(index: Map<string, vscode.Uri[]>, key: string, uri: vscode.Uri) {
+  const matches = index.get(key) ?? [];
+  matches.push(uri);
+  index.set(key, matches);
+}
+
+async function createWorkspaceResourceIndex(): Promise<WorkspaceResourceIndex> {
+  const index: WorkspaceResourceIndex = {
+    images: new Map(),
+    notes: new Map(),
+  };
+  const resourceUris = await vscode.workspace.findFiles(
+    workspaceResourcePattern,
+    workspaceResourceExclude
+  );
+
+  for (const uri of resourceUris) {
+    const fileName = path.posix.basename(uri.path).toLocaleLowerCase();
+    const extension = path.posix.extname(fileName);
+    if (imageExtensions.has(extension)) {
+      addToIndex(index.images, fileName, uri);
+    } else {
+      addToIndex(index.notes, fileName, uri);
+      addToIndex(index.notes, fileName.slice(0, -extension.length), uri);
+    }
+  }
+
+  return index;
+}
+
+function pathDistance(fromDirectory: string, target: string): number {
+  const relative = path.relative(fromDirectory, target);
+  return relative.split(path.sep).filter(Boolean).length;
+}
+
+function findIndexedResource(
+  resourcePath: string,
+  document: vscode.TextDocument,
+  index: Map<string, vscode.Uri[]>
+): vscode.Uri | undefined {
+  // A path containing directories is intentional and should keep normal
+  // Markdown relative-path semantics. The index is the Foam-style fallback
+  // for embeds that only retain the resource file name.
+  if (path.basename(resourcePath) !== resourcePath) return undefined;
+
+  const matches = index.get(resourcePath.toLocaleLowerCase());
+  if (!matches?.length) return undefined;
+  if (matches.length === 1) return matches[0];
+
+  const documentDirectory = path.dirname(document.fileName);
+  return [...matches].sort((left, right) => {
+    const distance = pathDistance(documentDirectory, left.fsPath)
+      - pathDistance(documentDirectory, right.fsPath);
+    return distance || left.fsPath.localeCompare(right.fsPath);
+  })[0];
+}
+
 function resolveMarkdownImageUrl(
   url: string,
   document: vscode.TextDocument,
-  webview: vscode.Webview
+  webview: vscode.Webview,
+  resourceIndex: WorkspaceResourceIndex
 ): string {
   const cleanUrl = stripUrlWrapper(url);
   if (!cleanUrl || isRemoteOrDataUrl(cleanUrl) || cleanUrl.startsWith('#')) {
@@ -135,27 +204,70 @@ function resolveMarkdownImageUrl(
 
   try {
     const decodedPath = decodeURI(resourcePath);
-    const fsPath = path.isAbsolute(decodedPath)
-      ? decodedPath
-      : path.resolve(path.dirname(document.fileName), decodedPath);
-    const webviewUri = webview.asWebviewUri(vscode.Uri.file(fsPath)).toString();
+    const indexedUri = findIndexedResource(decodedPath, document, resourceIndex.images);
+    const resourceUri = indexedUri ?? vscode.Uri.file(
+      path.isAbsolute(decodedPath)
+        ? decodedPath
+        : path.resolve(path.dirname(document.fileName), decodedPath)
+    );
+    const webviewUri = webview.asWebviewUri(resourceUri).toString();
     return `${webviewUri}${suffix}`;
   } catch {
     return cleanUrl;
   }
 }
 
-function parseFoamImageTarget(target: string): Image | null {
+function createOpenDocumentUri(uri: vscode.Uri): string {
+  return `command:vscode.open?${encodeURIComponent(JSON.stringify([uri]))}`;
+}
+
+function resolveFoamNoteUrl(
+  url: string,
+  document: vscode.TextDocument,
+  resourceIndex: WorkspaceResourceIndex
+): string {
+  const hashIndex = url.indexOf('#');
+  const resourcePath = hashIndex >= 0 ? url.slice(0, hashIndex) : url;
+
+  try {
+    const decodedPath = decodeURI(resourcePath);
+    const indexedUri = findIndexedResource(decodedPath, document, resourceIndex.notes);
+    const hasExtension = Boolean(path.extname(decodedPath));
+    const fallbackPath = hasExtension ? decodedPath : `${decodedPath}.md`;
+    const resourceUri = indexedUri ?? vscode.Uri.file(
+      path.isAbsolute(fallbackPath)
+        ? fallbackPath
+        : path.resolve(path.dirname(document.fileName), fallbackPath)
+    );
+    return createOpenDocumentUri(resourceUri);
+  } catch {
+    return url;
+  }
+}
+
+function parseFoamEmbedTarget(target: string): Image | Link | null {
   const [rawUrl, ...rawOptions] = target.split('|').map((part) => part.trim());
   if (!rawUrl) return null;
+
+  const resourcePath = rawUrl.split('#', 1)[0];
+  const extension = path.extname(resourcePath).toLocaleLowerCase();
+  const option = rawOptions.join('|').trim();
+
+  if (!imageExtensions.has(extension)) {
+    const label = option || path.basename(resourcePath, extension) || rawUrl;
+    return {
+      type: 'link',
+      url: rawUrl,
+      children: [{ type: 'text', value: label }],
+      data: { foamNoteLink: true },
+    } as Link;
+  }
 
   const imageNode: Image = {
     type: 'image',
     url: rawUrl,
     alt: path.basename(rawUrl),
   };
-  const option = rawOptions.join('|').trim();
-
   if (option) {
     const sizeMatch = option.match(/^(\d+)(?:x(\d+))?$/i);
     if (sizeMatch) {
@@ -202,9 +314,9 @@ const foamImageLinks: Plugin<[], MdastRoot> = () =>
             });
           }
 
-          const imageNode = parseFoamImageTarget(match[1]);
-          if (imageNode) {
-            nextChildren.push(imageNode);
+          const embedNode = parseFoamEmbedTarget(match[1]);
+          if (embedNode) {
+            nextChildren.push(embedNode);
           } else {
             nextChildren.push({
               ...child,
@@ -236,30 +348,38 @@ const foamImageLinks: Plugin<[], MdastRoot> = () =>
 
 const localImageUris = (
   document: vscode.TextDocument,
-  webview: vscode.Webview
+  webview: vscode.Webview,
+  resourceIndex: WorkspaceResourceIndex
 ): Plugin<[], MdastRoot> => () =>
   function transformer(tree) {
     visit(tree, 'image', (node) => {
-      node.url = resolveMarkdownImageUrl(node.url, document, webview);
+      node.url = resolveMarkdownImageUrl(node.url, document, webview, resourceIndex);
+    });
+    visit(tree, 'link', (node) => {
+      if ((node.data as any)?.foamNoteLink) {
+        node.url = resolveFoamNoteUrl(node.url, document, resourceIndex);
+      }
     });
   };
 
 const createMarkdownProcessor = (
   document: vscode.TextDocument,
-  webview: vscode.Webview
+  webview: vscode.Webview,
+  resourceIndex: WorkspaceResourceIndex
 ) => unified()
   .use(remarkParse)
   .use(remarkFrontmatter)
   .use(remarkGfm)
   .use(foamImageLinks)
-  .use(localImageUris(document, webview));
+  .use(localImageUris(document, webview, resourceIndex));
 
 const createHtmlProcessor = (
   document: vscode.TextDocument,
-  webview: vscode.Webview
+  webview: vscode.Webview,
+  resourceIndex: WorkspaceResourceIndex
 ) => unified()
   .use(foamImageLinks)
-  .use(localImageUris(document, webview))
+  .use(localImageUris(document, webview, resourceIndex))
   .use(remarkRehype)
   .use(rehypeHighlight)
   .use(addWidthAndHeight)
@@ -382,8 +502,17 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
       document.uri
     );
 
-    const markdownProcessor = createMarkdownProcessor(document, mindElixirPanel.panel.webview);
-    const htmlProcessor = createHtmlProcessor(document, mindElixirPanel.panel.webview);
+    const resourceIndex = await createWorkspaceResourceIndex();
+    const markdownProcessor = createMarkdownProcessor(
+      document,
+      mindElixirPanel.panel.webview,
+      resourceIndex
+    );
+    const htmlProcessor = createHtmlProcessor(
+      document,
+      mindElixirPanel.panel.webview,
+      resourceIndex
+    );
 
     const getParsedData = (text: string) => {
       let data: NodeObj;

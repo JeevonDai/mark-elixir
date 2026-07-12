@@ -18,6 +18,15 @@ View Markdown As A Mindmap.
 
 ![View Markdown As A Mindmap](https://github.com/SSShooter/mark-elixir/blob/master/images/how-to-use-2.png?raw=true)
 
+Foam-style image embeds are supported. When an embed only contains a file name,
+such as `![[diagram.png]]`, Mark Elixir searches the workspace for the image.
+If more than one image has the same name, the one closest to the Markdown file
+is used.
+
+Foam embeds that target Markdown files or extensionless note names, such as
+`![[another-note.md]]` and `![[another-note]]`, are rendered as links that open
+the matching note instead of broken images.
+
 **Enjoy!**
 
 ## Configuration
