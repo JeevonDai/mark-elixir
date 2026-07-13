@@ -22,6 +22,9 @@ body {
 /* Keep regular text and code blocks on the same, slightly wider node measure. */
 .map-container me-tpc {
   max-width: 48em;
+  /* Keep intentional line breaks, but collapse indentation whitespace so a
+     leading Tab or a run of spaces cannot inflate the node's measured box. */
+  white-space: pre-line;
 }
 me-main > me-wrapper {
   margin: 10px !important;
@@ -56,6 +59,7 @@ me-main > me-wrapper {
   font-size: var(--vscode-editor-font-size, 13px);
   line-height: 1.45;
   white-space: pre-wrap;
+  tab-size: 4;
   overflow-wrap: anywhere;
   word-break: break-word;
 }

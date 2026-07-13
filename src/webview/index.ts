@@ -100,6 +100,12 @@ function getMindTheme() {
 }
 
 const MAX_CODE_WRAP_COLUMNS = 96;
+const CODE_TAB_SIZE = 4;
+
+function getCharacterColumns(character: string, column: number): number {
+  if (character !== '\t') return 1;
+  return CODE_TAB_SIZE - (column % CODE_TAB_SIZE);
+}
 
 function getCodeWrapColumns(code: HTMLElement): number {
   const style = window.getComputedStyle(code);
@@ -145,7 +151,8 @@ function wrapCodeBlocks(root: ParentNode = document): void {
           continue;
         }
 
-        if (column >= wrapColumns) {
+        const characterColumns = getCharacterColumns(character, column);
+        if (column > 0 && column + characterColumns > wrapColumns) {
           if (chunk) fragment.append(document.createTextNode(chunk));
           chunk = '';
           fragment.append(document.createTextNode('\n'));
@@ -159,7 +166,7 @@ function wrapCodeBlocks(root: ParentNode = document): void {
         }
 
         chunk += character;
-        column += character === '\t' ? 4 : 1;
+        column += getCharacterColumns(character, column);
       }
 
       if (chunk) fragment.append(document.createTextNode(chunk));

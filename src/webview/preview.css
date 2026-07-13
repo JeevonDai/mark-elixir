@@ -17,6 +17,15 @@
 /* Custom styles for mind map nodes to look great in VSCode themes */
 .mindelixir-codeblock-container me-tpc {
 	font-family: var(--vscode-editor-font-family, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif);
+	/* Preserve explicit newlines without letting indentation whitespace make
+	   ordinary topic boxes unexpectedly wide or tall. */
+	white-space: pre-line;
+}
+
+.mindelixir-codeblock-container me-tpc pre,
+.mindelixir-codeblock-container me-tpc code {
+	white-space: pre-wrap;
+	tab-size: 4;
 }
 
 .mindelixir-export-btn {
