@@ -86,9 +86,9 @@ me-main > me-wrapper {
 .map-canvas blockquote {
   display: flex;
   align-items: flex-start;
-  gap: 0.45em;
+  gap: 0.3em;
   margin: 0;
-  padding: 0;
+  padding: 0.1em 0.35em;
   background: var(--vscode-textBlockQuote-background, rgba(127, 127, 127, 0.12));
 }
 
@@ -105,11 +105,12 @@ me-main > me-wrapper {
 .map-canvas blockquote ul,
 .map-canvas blockquote ol {
   margin: 0;
-  padding-inline-start: 1.25em;
+  padding-inline-start: 1.1em;
 }
 
 .map-canvas blockquote li {
-  padding-inline-start: 0.1em;
+  margin: 0;
+  padding: 0;
 }
 
 .vscode-light .map-canvas blockquote::before {

@@ -29,6 +29,7 @@ interface SourceMappedNode extends NodeObj {
     start: number;
     end: number;
   };
+  rawMarkdown?: string;
 }
 
 interface Window {
@@ -128,9 +129,11 @@ function getCodeWrapColumns(code: HTMLElement): number {
   ));
 }
 
-function wrapCodeBlocks(root: ParentNode = document): void {
+function wrapCodeBlocks(root: ParentNode = document): boolean {
+  let changed = false;
   root.querySelectorAll<HTMLElement>('pre code').forEach((code) => {
     if (code.dataset.wrapped === 'true') return;
+    changed = true;
     code.dataset.wrapped = 'true';
 
     const walker = document.createTreeWalker(code, NodeFilter.SHOW_TEXT);
@@ -173,6 +176,7 @@ function wrapCodeBlocks(root: ParentNode = document): void {
       textNode.replaceWith(fragment);
     }
   });
+  return changed;
 }
 
 function prepareImages(root: ParentNode = document): void {
@@ -181,7 +185,7 @@ function prepareImages(root: ParentNode = document): void {
     img.dataset.mindElixirImage = 'true';
     img.title = img.alt || 'Click to open image';
     if (!img.complete) {
-      img.addEventListener('load', () => mind?.linkDiv(), { once: true });
+      img.addEventListener('load', () => scheduleMindRelink(), { once: true });
     }
   });
 }
@@ -208,9 +212,50 @@ const options: Options = {
 
 mind = new MindElixir(options);
 mind.init(data);
-wrapCodeBlocks();
-prepareImages();
-mind.linkDiv();
+
+let relinkFrame: number | null = null;
+let centerAfterRelink = false;
+
+function scheduleMindRelink(center = false): void {
+  if (!mind) return;
+  centerAfterRelink ||= center;
+  if (relinkFrame !== null) cancelAnimationFrame(relinkFrame);
+
+  // Two animation frames allow flex layout, images, and font metrics to settle
+  // before Mind Elixir measures node boxes and redraws every connector.
+  relinkFrame = requestAnimationFrame(() => {
+    relinkFrame = requestAnimationFrame(() => {
+      if (!mind) return;
+      mind.linkDiv();
+      if (centerAfterRelink) mind.toCenter();
+      centerAfterRelink = false;
+      relinkFrame = null;
+    });
+  });
+}
+
+function normalizeRenderedNodes(center = false): void {
+  if (!mind) return;
+  const dimensionsChanged = wrapCodeBlocks(mind.nodes);
+  prepareImages(mind.nodes);
+  if (dimensionsChanged || center) scheduleMindRelink(center);
+}
+
+// refresh(), expandNode(), direction changes, undo/redo, and theme changes all
+// finish with linkDiv(). Normalize any newly-created DOM before their caller
+// reads the final node position, then redraw once the layout is stable.
+mind.bus.addListener('linkDiv', () => normalizeRenderedNodes());
+normalizeRenderedNodes(true);
+
+// KaTeX and editor web fonts may change glyph metrics after the initial map is
+// laid out even when the DOM itself has not changed.
+void document.fonts?.ready.then(() => scheduleMindRelink());
+document.fonts?.addEventListener('loadingdone', () => scheduleMindRelink());
+
+// This is the final safety net for any content whose dimensions change later
+// (for example decoded images or browser-specific rich Markdown layout).
+const nodeSizeObserver = new ResizeObserver(() => scheduleMindRelink());
+nodeSizeObserver.observe(mind.nodes);
 
 let imageOpenTimer: ReturnType<typeof setTimeout> | null = null;
 mind.container.addEventListener('click', (event) => {
@@ -278,9 +323,59 @@ themeObserver.observe(document.body, {
 // click cancels the pending edit and reveals the node in the source document.
 if (!isPlaintext && vsc) {
   let editTimer: ReturnType<typeof setTimeout> | null = null;
-  let activeMarkdownEdit: { topic: HTMLElement; originalHtml: string } | null = null;
+  let activeMarkdownEdit: {
+    topic: HTMLElement;
+    node: SourceMappedNode;
+    originalHtml: string;
+    originalTopic: string;
+  } | null = null;
 
-  const beginMarkdownEdit = (topic: HTMLElement & { text?: HTMLElement }) => {
+  const restoreRenderedShape = () => {
+    if (!activeMarkdownEdit) return;
+    const { topic, node, originalHtml, originalTopic } = activeMarkdownEdit;
+    node.topic = originalTopic;
+    topic.innerHTML = originalHtml;
+    activeMarkdownEdit = null;
+  };
+
+  const measureSourceEditor = (input: HTMLElement, source: string) => {
+    const probe = input.cloneNode(false) as HTMLElement;
+    probe.removeAttribute('id');
+    probe.removeAttribute('contenteditable');
+    probe.textContent = source;
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    probe.style.pointerEvents = 'none';
+    probe.style.width = 'max-content';
+    probe.style.minWidth = '0';
+    probe.style.maxWidth = 'none';
+    probe.style.height = 'auto';
+    probe.style.minHeight = '0';
+    probe.style.whiteSpace = 'pre';
+    probe.style.overflowWrap = 'normal';
+    mind!.nodes.appendChild(probe);
+
+    const style = window.getComputedStyle(probe);
+    const horizontalChrome = parseFloat(style.paddingLeft)
+      + parseFloat(style.paddingRight)
+      + parseFloat(style.borderLeftWidth)
+      + parseFloat(style.borderRightWidth);
+    const verticalChrome = parseFloat(style.paddingTop)
+      + parseFloat(style.paddingBottom)
+      + parseFloat(style.borderTopWidth)
+      + parseFloat(style.borderBottomWidth);
+    const size = {
+      width: Math.max(1, probe.offsetWidth - horizontalChrome),
+      height: Math.max(1, probe.offsetHeight - verticalChrome),
+    };
+    probe.remove();
+    return size;
+  };
+
+  const beginMarkdownEdit = (
+    topic: HTMLElement & { text?: HTMLElement },
+    node: SourceMappedNode
+  ) => {
     if (!mind) return;
     const renderedContent = topic.querySelector<HTMLElement>(
       'h1, h2, h3, h4, h5, h6, blockquote p, blockquote, p'
@@ -292,21 +387,25 @@ if (!isPlaintext && vsc) {
       + parseFloat(renderedStyle.paddingBottom);
     const contentWidth = Math.max(1, renderedContent.clientWidth - horizontalPadding);
     const contentHeight = Math.max(1, renderedContent.clientHeight - verticalPadding);
-    activeMarkdownEdit = { topic, originalHtml: topic.innerHTML };
+    activeMarkdownEdit = {
+      topic,
+      node,
+      originalHtml: topic.innerHTML,
+      originalTopic: node.topic,
+    };
 
     // Markdown nodes are rendered from HTML and do not expose Mind Elixir's
-    // normal text element. Use the topic itself, then normalize the generated
-    // editor to the exact rendered box to avoid layout/size jumps.
+    // normal text element. Temporarily expose the original source so editing
+    // keeps Markdown markers such as headings, quotes, and list bullets.
+    node.topic = node.rawMarkdown!;
     topic.text = topic;
     mind.editTopic(topic as any);
     const input = mind.nodes.querySelector<HTMLElement>('#input-box');
     if (!input) return;
-    // Match the rendered content box rather than its outer box. This avoids a
-    // few pixels of padding/border drift that can wrap one extra character.
+    // Keep the rendered node's top-left anchor, but let the source editor grow
+    // to fit Markdown markers and line indentation. Avoiding new wraps keeps
+    // the visible text close to its position before entering edit mode.
     input.style.boxSizing = 'content-box';
-    input.style.width = `${contentWidth}px`;
-    input.style.minWidth = `${contentWidth}px`;
-    input.style.minHeight = `${contentHeight}px`;
     input.style.fontFamily = renderedStyle.fontFamily;
     input.style.fontSize = renderedStyle.fontSize;
     input.style.fontWeight = renderedStyle.fontWeight;
@@ -322,32 +421,44 @@ if (!isPlaintext && vsc) {
     input.style.backgroundColor = renderedStyle.backgroundColor;
     input.style.whiteSpace = 'pre-wrap';
     input.style.overflowWrap = 'anywhere';
-  };
 
-  const restoreRenderedShape = (text: string) => {
-    if (!activeMarkdownEdit) return;
-    const { topic, originalHtml } = activeMarkdownEdit;
-    const template = document.createElement('template');
-    template.innerHTML = originalHtml;
-    const content = template.content.querySelector<HTMLElement>(
-      'h1, h2, h3, h4, h5, h6, blockquote p, blockquote, p'
+    const sourceSize = measureSourceEditor(input, node.rawMarkdown!);
+    const scale = Math.max(mind.scaleVal, 0.1);
+    const viewportLimit = mind.container.clientWidth * 0.8 / scale;
+    const fontSize = parseFloat(renderedStyle.fontSize) || 16;
+    const topicMaxWidth = parseFloat(window.getComputedStyle(topic).maxWidth);
+    const nodeWidthLimit = Number.isFinite(topicMaxWidth)
+      ? topicMaxWidth
+      : fontSize * 48;
+    const editorMaxWidth = Math.max(
+      contentWidth,
+      Math.min(viewportLimit, nodeWidthLimit)
     );
-    if (content) {
-      content.textContent = text;
-      topic.replaceChildren(template.content.cloneNode(true));
-    }
-    activeMarkdownEdit = null;
+    // A one-character list item still needs room for its Markdown marker and
+    // a usable caret target, without changing the maximum width of long nodes.
+    const editorMinWidth = Math.min(editorMaxWidth, fontSize * 4);
+    const editorWidth = Math.min(
+      editorMaxWidth,
+      Math.max(contentWidth, sourceSize.width, editorMinWidth)
+    );
+    input.style.width = `${editorWidth}px`;
+    input.style.minWidth = `${Math.max(contentWidth, editorMinWidth)}px`;
+    input.style.maxWidth = `${editorMaxWidth}px`;
+    input.style.minHeight = `${Math.max(contentHeight, sourceSize.height)}px`;
+    // Mind Elixir only emits finishEdit when text changed. Also restore the
+    // rendered HTML after Escape or an unchanged blur.
+    input.addEventListener('blur', restoreRenderedShape, { once: true });
   };
 
   mind.container.addEventListener('click', (event) => {
     if ((event.target as Element | null)?.closest('img')) return;
     const topic = (event.target as Element | null)?.closest('me-tpc') as any;
     const node = topic?.nodeObj as SourceMappedNode | undefined;
-    if (!mind || !topic || !node?.editableRange || topic.closest('me-root')) return;
+    if (!mind || !topic || !node?.sourceRange || !node.rawMarkdown || topic.closest('me-root')) return;
 
     if (editTimer) clearTimeout(editTimer);
     editTimer = setTimeout(() => {
-      beginMarkdownEdit(topic);
+      beginMarkdownEdit(topic, node);
       editTimer = null;
     }, 250);
   });
@@ -374,13 +485,14 @@ if (!isPlaintext && vsc) {
   mind.bus.addListener('operation', (operation: any) => {
     if (operation?.name !== 'finishEdit') return;
     const node = operation.obj as SourceMappedNode | undefined;
-    if (!node?.editableRange) return;
-    restoreRenderedShape(node.topic);
+    if (!node?.sourceRange) return;
+    const rawMarkdown = node.topic;
+    restoreRenderedShape();
     vsc.postMessage({
       command: 'editSource',
-      start: node.editableRange.start,
-      end: node.editableRange.end,
-      text: node.topic,
+      start: node.sourceRange.start,
+      end: node.sourceRange.end,
+      text: rawMarkdown,
     });
   });
 }

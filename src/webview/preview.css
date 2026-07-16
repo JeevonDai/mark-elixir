@@ -28,6 +28,34 @@
 	tab-size: 4;
 }
 
+/* Keep quoted text and its list compact on one row while resetting the
+   browser's large default list indentation. */
+.mindelixir-codeblock-container me-tpc blockquote {
+	display: flex;
+	align-items: flex-start;
+	gap: 0.3em;
+	margin: 0;
+	padding: 0.1em 0.35em;
+}
+
+.mindelixir-codeblock-container me-tpc blockquote::before {
+	content: ">";
+	flex: none;
+	font-weight: 700;
+}
+
+.mindelixir-codeblock-container me-tpc blockquote p,
+.mindelixir-codeblock-container me-tpc blockquote ul,
+.mindelixir-codeblock-container me-tpc blockquote ol,
+.mindelixir-codeblock-container me-tpc blockquote li {
+	margin: 0;
+}
+
+.mindelixir-codeblock-container me-tpc blockquote ul,
+.mindelixir-codeblock-container me-tpc blockquote ol {
+	padding-inline-start: 1.1em;
+}
+
 .mindelixir-export-btn {
 	position: absolute;
 	top: 8px;

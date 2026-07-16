@@ -103,7 +103,10 @@ interface SourceRange {
   end: number;
 }
 
-type SourceMappedNode = NodeObj & { sourceRange?: SourceRange };
+type SourceMappedNode = NodeObj & {
+  sourceRange?: SourceRange;
+  rawMarkdown?: string;
+};
 
 function getEditableRange(sourceNode: any): SourceRange | undefined {
   let content = sourceNode;
@@ -136,6 +139,15 @@ function setSourceRange(node: NodeObj, sourceNode: any): void {
   if (editableRange) {
     (node as SourceMappedNode & { editableRange?: SourceRange }).editableRange = editableRange;
   }
+}
+
+function setRawMarkdown(node: NodeObj, source: string): void {
+  const mappedNode = node as SourceMappedNode;
+  const range = mappedNode.sourceRange;
+  if (range) {
+    mappedNode.rawMarkdown = source.slice(range.start, range.end);
+  }
+  node.children?.forEach((child) => setRawMarkdown(child, source));
 }
 
 interface WorkspaceResourceIndex {
@@ -589,6 +601,7 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           id: 'root',
           children: nodes,
         };
+        setRawMarkdown(data, text);
       }
       return { data, title };
     };
@@ -672,15 +685,10 @@ export const markdownToMindElixir = (context: vscode.ExtensionContext) => {
           if (isPlaintext) return;
           const start = Number(message.start);
           const end = Number(message.end);
-          let text = typeof message.text === 'string' ? message.text.trim() : '';
-          if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || !text) return;
+          const text = typeof message.text === 'string' ? message.text : '';
+          if (!Number.isInteger(start) || !Number.isInteger(end) || start > end || !text.trim()) return;
 
           const startPosition = document.positionAt(start);
-          const linePrefix = document.lineAt(startPosition.line).text.slice(0, startPosition.character);
-          if (/^\s*(?:>\s*)+$/.test(linePrefix)) {
-            text = text.replace(/\r?\n/g, `\n${linePrefix}`);
-          }
-
           const edit = new vscode.WorkspaceEdit();
           edit.replace(
             document.uri,
